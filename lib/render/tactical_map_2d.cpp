@@ -157,6 +157,66 @@ void TacticalMercatorMap::apply_mouse_pan_drag(const cw::engine::Engine& eng, in
   cam_.pan_my += static_cast<float>(dy_win) * mpy;
 }
 
+void TacticalMercatorMap::set_frustum_center_lonlat(const cw::engine::Engine& eng, int vp_w, int vp_h,
+                                                    double lon_deg, double lat_deg) {
+  MercatorBounds b{};
+  expand_bounds_from_engine(eng, b);
+  MercatorOrthoFrustum fit{};
+  compute_ortho_frustum(b, vp_w, vp_h, fit);
+  const double cx_base = static_cast<double>((fit.l + fit.r) * 0.5F);
+  const double cy_base = static_cast<double>((fit.b + fit.t) * 0.5F);
+  double mx = 0.;
+  double my = 0.;
+  lonlat_deg_to_mercator_meters(lon_deg, lat_deg, mx, my);
+  double raw_pan_x = mx - cx_base;
+  const double W = static_cast<double>(kWorldWidthM);
+  while (raw_pan_x > W * 0.5) {
+    raw_pan_x -= W;
+  }
+  while (raw_pan_x < -W * 0.5) {
+    raw_pan_x += W;
+  }
+  cam_.pan_mx = static_cast<float>(raw_pan_x);
+  cam_.pan_my = static_cast<float>(my - cy_base);
+  MercatorOrthoFrustum dummy{};
+  compute_interactive_frustum(b, vp_w, vp_h, dummy);
+}
+
+void TacticalMercatorMap::set_visible_ground_ew_meters_at_lat(const cw::engine::Engine& eng, int vp_w,
+                                                              int vp_h, double physical_ew_m,
+                                                              double center_lat_deg) {
+  if (physical_ew_m < 1.0 || vp_w < 1 || vp_h < 1) {
+    return;
+  }
+  constexpr double kPi = 3.14159265358979323846;
+  const double lat_r = center_lat_deg * (kPi / 180.0);
+  const double cos_lat = std::max(1e-4, std::cos(lat_r));
+  const double target_tw = physical_ew_m / cos_lat;
+
+  MercatorBounds b{};
+  expand_bounds_from_engine(eng, b);
+  MercatorOrthoFrustum fit{};
+  compute_ortho_frustum(b, vp_w, vp_h, fit);
+  const float fit_w = fit.r - fit.l;
+  if (fit_w < 1e-3F) {
+    return;
+  }
+
+  for (int iter = 0; iter < 8; ++iter) {
+    cam_.zoom = static_cast<float>(static_cast<double>(fit_w) / target_tw);
+    cam_.zoom = std::clamp(cam_.zoom, 0.0002F, 400.F);
+    MercatorOrthoFrustum tactical{};
+    compute_interactive_frustum(b, vp_w, vp_h, tactical);
+    const double tw = static_cast<double>(tactical.r - tactical.l);
+    const double ew = tw * cos_lat;
+    const double err = ew / physical_ew_m;
+    if (std::abs(err - 1.0) < 0.005) {
+      break;
+    }
+    cam_.zoom = static_cast<float>(static_cast<double>(cam_.zoom) / err);
+  }
+}
+
 void TacticalMercatorMap::expand_frustum_for_world_basemap(const MercatorOrthoFrustum& tactical,
                                                            MercatorOrthoFrustum& map) {
   constexpr float kMinHalfSpanM = 4.0e6F;

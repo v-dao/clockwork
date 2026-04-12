@@ -51,7 +51,7 @@
 
 | 功能 | 说明 | 主要文件 / 符号 |
 |------|------|------------------|
-| 视图模式 | 2D 战术图 / 3D 地球切换 | `situation_view.cpp`：`ViewMode`，菜单 `View` |
+| 视图模式 | 2D 战术图 / 3D 地球 / **左右分屏**（左 2D、右 3D，竖线分割） | `situation_view.cpp`：`ViewMode`，菜单 `View` →「2D + 3D split view」 |
 | 投影与 MODELVIEW | 透视 + `lookAt(eye→0) × content_R` | `lib/render/globe_view_3d.cpp`：`setup_projection_and_modelview` |
 | 轨道相机参数 | `yaw` / `pitch` / `distance`；默认拖动 **不** 改 yaw/pitch | `GlobeEarthView::GlobeCamera`；滚轮改 `distance` |
 | 弧球拖动入队 | 左键按下且像素变化时排队一对像素 | `situation_view.cpp`：`queue_arcball_drag` |
@@ -117,3 +117,4 @@
 - **北向修正**：近似的 swing–twist 不足以对齐屏幕；改为最短弧 + **`north_roll_align_content_R`**（与 `gluLookAt` 相机上对齐）。
 - **弧球与拾取**：弧球增量须 **右乘** `content_R * Rd`；`u0,u1` 为模型系。射线–球面交点用 `content_R` 将命中点变到世界系后再与 `eye` 判半球；文档与实现对齐。
 - **经纬网**：补充 `pick_lonlat_step_deg` 最细 **0.05°**、`globe_patch_diameter_deg` 局部带状绘制、归并与线偏移；相关文件列入 §4。
+- **分屏视图**：`ViewMode::Split2dGlobe`；`draw_frame_split` 半宽视口分别调用 `draw_frame_tactical` / `draw_frame_globe`；弧球与滚轮在右半幅用局部像素坐标；左半幅仍为战术平移/缩放。`try_pixel_unit_world` 中 `gluUnProject` 须使用 `GL_VIEWPORT` 的 `x` 偏移，否则右半幅拾取失败、弧球无响应。

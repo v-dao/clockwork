@@ -703,17 +703,23 @@ void GlobeEarthView::process_pending_arcball(int vp_w, int vp_h) {
 
 bool GlobeEarthView::try_pixel_unit_world(int mx, int my, int vp_w, int vp_h, double& ux, double& uy,
                                           double& uz) const {
-  if (vp_w < 1 || vp_h < 1 || mx < 0 || my < 0 || mx >= vp_w || my >= vp_h) {
+  if (vp_w < 1 || vp_h < 1) {
     return false;
   }
   GLint view[4]{};
+  glGetIntegerv(GL_VIEWPORT, view);
+  const int vw = view[2];
+  const int vh = view[3];
+  /// `mx`,`my` 为相对当前视口左上角的像素（与全屏时一致）；`gluUnProject` 需要整窗左下为原点的坐标，故 X 须加 `view[0]`（分屏右半幅时非 0）。
+  if (vw < 1 || vh < 1 || mx < 0 || my < 0 || mx >= vw || my >= vh) {
+    return false;
+  }
   GLdouble model[16]{};
   GLdouble proj[16]{};
-  glGetIntegerv(GL_VIEWPORT, view);
   glGetDoublev(GL_MODELVIEW_MATRIX, model);
   glGetDoublev(GL_PROJECTION_MATRIX, proj);
-  const GLdouble winx = static_cast<GLdouble>(mx);
-  const GLdouble winy = static_cast<GLdouble>(vp_h - 1 - my);
+  const GLdouble winx = static_cast<GLdouble>(view[0]) + static_cast<GLdouble>(mx);
+  const GLdouble winy = static_cast<GLdouble>(view[1]) + static_cast<GLdouble>(vh - 1 - my);
   GLdouble ax = 0.;
   GLdouble ay = 0.;
   GLdouble az = 0.;
@@ -811,6 +817,89 @@ bool GlobeEarthView::try_pixel_lonlat(int mx, int my, int vp_w, int vp_h, double
   lat_deg = std::asin(std::max(-1.0, std::min(1.0, ny))) * (180.0 / kPi);
   lon_deg = std::atan2(nx, nz) * (180.0 / kPi);
   return true;
+}
+
+void GlobeEarthView::viewport_center_lonlat_from_pose(double& lon_deg, double& lat_deg) const noexcept {
+  float ex = 0.F;
+  float ey = 0.F;
+  float ez = 0.F;
+  compute_eye(cam_.yaw, cam_.pitch, cam_.distance, ex, ey, ez);
+  const double elen =
+      std::sqrt(static_cast<double>(ex) * ex + static_cast<double>(ey) * ey + static_cast<double>(ez) * ez);
+  if (elen < 1e-12) {
+    lon_deg = 0.;
+    lat_deg = 0.;
+    return;
+  }
+  const double wx = static_cast<double>(ex) / elen;
+  const double wy = static_cast<double>(ey) / elen;
+  const double wz = static_cast<double>(ez) / elen;
+  /// `p_world = R * p_body`；视口中心在球面上的点满足 `R * p_body = normalize(eye)`，故 `p_body = R^T w`（与 `col i` 点积：`(R^T w)_i = sum_j R[j,i] w_j`）。
+  const double bx = content_R_[0] * wx + content_R_[1] * wy + content_R_[2] * wz;
+  const double by = content_R_[4] * wx + content_R_[5] * wy + content_R_[6] * wz;
+  const double bz = content_R_[8] * wx + content_R_[9] * wy + content_R_[10] * wz;
+  constexpr double kPi = 3.14159265358979323846;
+  lat_deg = std::asin(std::max(-1.0, std::min(1.0, by))) * (180.0 / kPi);
+  lon_deg = std::atan2(bx, bz) * (180.0 / kPi);
+}
+
+void GlobeEarthView::orient_content_to_place_lonlat_at_screen_center(double lon_deg, double lat_deg) noexcept {
+  double u[3]{};
+  lonlat_deg_to_unit_sphere(lon_deg, lat_deg, u[0], u[1], u[2]);
+  float ex = 0.F;
+  float ey = 0.F;
+  float ez = 0.F;
+  compute_eye(cam_.yaw, cam_.pitch, cam_.distance, ex, ey, ez);
+  const double elen =
+      std::sqrt(static_cast<double>(ex) * ex + static_cast<double>(ey) * ey + static_cast<double>(ez) * ez);
+  if (elen < 1e-12) {
+    return;
+  }
+  const double v[3] = {static_cast<double>(ex) / elen, static_cast<double>(ey) / elen,
+                       static_cast<double>(ez) / elen};
+  double R_align[16]{};
+  cw::math::rot_align_unit_vectors_to_mat4_col(u, v, R_align);
+  for (int i = 0; i < 16; ++i) {
+    content_R_[i] = R_align[i];
+  }
+  north_roll_align_content_R(content_R_, static_cast<double>(ex), static_cast<double>(ey),
+                             static_cast<double>(ez));
+}
+
+double GlobeEarthView::visible_ground_ew_meters(int vp_w, int vp_h) const noexcept {
+  constexpr double kEarthR = 6378137.0;
+  constexpr double kPi = 3.14159265358979323846;
+  constexpr double kFovYDeg = 50.0;
+  if (vp_w < 1 || vp_h < 1) {
+    return 0.;
+  }
+  const double d = std::max(1.001, static_cast<double>(cam_.distance));
+  const double h_eye = std::max(0.0, d - 1.0);
+  const double tan_half_y = std::tan(0.5 * kFovYDeg * (kPi / 180.0));
+  const double aspect = static_cast<double>(vp_w) / static_cast<double>(vp_h);
+  return 2.0 * h_eye * tan_half_y * kEarthR * aspect;
+}
+
+void GlobeEarthView::set_camera_distance_for_visible_ew_meters(int vp_w, int vp_h,
+                                                                double physical_ew_m) noexcept {
+  constexpr double kEarthR = 6378137.0;
+  constexpr double kPi = 3.14159265358979323846;
+  constexpr double kFovYDeg = 50.0;
+  constexpr float kGlobeDistMin = 1.00002F;
+  constexpr float kGlobeDistMax = 28.F;
+  if (physical_ew_m < 1.0 || vp_w < 1 || vp_h < 1) {
+    return;
+  }
+  const double tan_half_y = std::tan(0.5 * kFovYDeg * (kPi / 180.0));
+  const double aspect = static_cast<double>(vp_w) / static_cast<double>(vp_h);
+  const double tan_half_x = tan_half_y * aspect;
+  const double denom = 2.0 * tan_half_x * kEarthR;
+  if (denom < 1e-12) {
+    return;
+  }
+  const double h_eye = physical_ew_m / denom;
+  const double d = 1.0 + h_eye;
+  cam_.distance = std::clamp(static_cast<float>(d), kGlobeDistMin, kGlobeDistMax);
 }
 
 void GlobeEarthView::mat4_mul_col(const double* a, const double* b, double* o) {

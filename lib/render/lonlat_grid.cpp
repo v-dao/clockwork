@@ -19,6 +19,8 @@ constexpr double kPi = 3.14159265358979323846;
 
 bool try_project_label_anchor(double wx, double wy, double wz, int vp_w, int vp_h, double& sx,
                               double& sy, double& sz) noexcept {
+  (void)vp_w;
+  (void)vp_h;
   GLint view[4]{};
   GLdouble model[16]{};
   GLdouble proj[16]{};
@@ -31,9 +33,14 @@ bool try_project_label_anchor(double wx, double wy, double wz, int vp_w, int vp_
   if (!std::isfinite(sx) || !std::isfinite(sy) || !std::isfinite(sz)) {
     return false;
   }
+  /// `gluProject` 为整窗坐标；分屏时 `GL_VIEWPORT.x` 非 0，不得以 `vp_w/vp_h` 当 0 原点视口。
+  const double vx0 = static_cast<double>(view[0]);
+  const double vy0 = static_cast<double>(view[1]);
+  const double vww = static_cast<double>(std::max(1, view[2]));
+  const double vwh = static_cast<double>(std::max(1, view[3]));
   const double margin = 22.0;
-  if (sx < margin || sy < margin || sx > static_cast<double>(vp_w) - margin ||
-      sy > static_cast<double>(vp_h) - margin) {
+  if (sx < vx0 + margin || sy < vy0 + margin || sx > vx0 + vww - margin ||
+      sy > vy0 + vwh - margin) {
     return false;
   }
   return true;

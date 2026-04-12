@@ -58,7 +58,7 @@ void ensure_gl_window_pos_2f() {
 /// 资源路径解析：想定文件所在目录的上一级通常即仓库根（scenarios/../assets/...）。
 std::string g_scenario_file_dir{};
 
-enum class ViewMode { Tactical2D, Globe3d };
+enum class ViewMode { Tactical2D, Globe3d, Split2dGlobe };
 ViewMode g_view_mode = ViewMode::Tactical2D;
 
 cw::render::TacticalMercatorMap g_tactical_map{};
@@ -66,11 +66,15 @@ cw::render::GlobeEarthView g_globe_view{};
 /// false：仅洋面 + 岸线/国界等；不显示二维/三维陆地底色（矢量填充、等距柱 BMP、墨卡托陆栅格）。
 constexpr bool k_show_land_basemap = false;
 
+/// 切换到「2D+3D 分屏」后首帧：用战术图中心对齐地球 content_R，再参与双向同步。
+bool g_split_initial_sync_pending = false;
+
 void reset_globe_view_auxiliary_state() noexcept { g_globe_view.reset_content_orientation(); }
 
 #ifdef _WIN32
 constexpr unsigned kMenuView2d = 0xE100;
 constexpr unsigned kMenuView3d = 0xE101;
+constexpr unsigned kMenuViewSplit2d3d = 0xE103;
 constexpr unsigned kMenuGlobeLighting = 0xE102;
 HWND g_hwnd_main = nullptr;
 HMENU g_hmenu_view = nullptr;
@@ -79,12 +83,18 @@ void on_view_menu(unsigned cmd, void* /*user*/) {
   if (cmd == kMenuView2d) {
     g_view_mode = ViewMode::Tactical2D;
     if (g_hmenu_view != nullptr) {
-      CheckMenuRadioItem(g_hmenu_view, kMenuView2d, kMenuView3d, kMenuView2d, MF_BYCOMMAND);
+      CheckMenuRadioItem(g_hmenu_view, kMenuView2d, kMenuViewSplit2d3d, kMenuView2d, MF_BYCOMMAND);
     }
   } else if (cmd == kMenuView3d) {
     g_view_mode = ViewMode::Globe3d;
     if (g_hmenu_view != nullptr) {
-      CheckMenuRadioItem(g_hmenu_view, kMenuView2d, kMenuView3d, kMenuView3d, MF_BYCOMMAND);
+      CheckMenuRadioItem(g_hmenu_view, kMenuView2d, kMenuViewSplit2d3d, kMenuView3d, MF_BYCOMMAND);
+    }
+  } else if (cmd == kMenuViewSplit2d3d) {
+    g_view_mode = ViewMode::Split2dGlobe;
+    g_split_initial_sync_pending = true;
+    if (g_hmenu_view != nullptr) {
+      CheckMenuRadioItem(g_hmenu_view, kMenuView2d, kMenuViewSplit2d3d, kMenuViewSplit2d3d, MF_BYCOMMAND);
     }
   } else if (cmd == kMenuGlobeLighting) {
     g_globe_view.toggle_lighting();
@@ -890,23 +900,27 @@ void draw_hud_gl_globe_variant(int vp_w, int vp_h, GLuint font_base, const Situa
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     constexpr float kPad = 4.F;
+    GLint gl_vp[4]{};
+    glGetIntegerv(GL_VIEWPORT, gl_vp);
+    const float clip_l = static_cast<float>(gl_vp[0]) + kPad;
+    const float clip_b = static_cast<float>(gl_vp[1]) + kPad;
+    const float clip_r = static_cast<float>(gl_vp[0] + gl_vp[2]) - kPad;
+    const float clip_t = static_cast<float>(gl_vp[1] + gl_vp[3]) - kPad;
     for (const auto& L : *grid_labels) {
       if (L.text[0] == '\0') {
         continue;
       }
       float rx = L.sx + L.ox;
       float ry = L.sy + L.oy;
-      const float x1 = static_cast<float>(vp_w) - kPad;
-      const float y1 = static_cast<float>(vp_h) - kPad;
-      /// 勿将屏外锚点夹入视口：否则 `glRasterPos` 会把不可见经度的注记叠在左/右边缘。
-      if (rx < kPad || ry < kPad || rx > x1 || ry > y1) {
+      /// 注记锚点为 `gluProject` / `glWindowPos` 的整窗坐标；分屏右半幅须按当前 `GL_VIEWPORT` 裁剪。
+      if (rx < clip_l || ry < clip_b || rx > clip_r || ry > clip_t) {
         continue;
       }
       float rx2 = rx + 1.F;
       float ry2 = ry + 1.F;
-      if (rx2 < kPad || ry2 < kPad || rx2 > x1 || ry2 > y1) {
-        rx2 = std::clamp(rx2, kPad, x1);
-        ry2 = std::clamp(ry2, kPad, y1);
+      if (rx2 < clip_l || ry2 < clip_b || rx2 > clip_r || ry2 > clip_t) {
+        rx2 = std::clamp(rx2, clip_l, clip_r);
+        ry2 = std::clamp(ry2, clip_b, clip_t);
       }
       glPixelZoom(static_cast<GLfloat>(L.pixel_scale), static_cast<GLfloat>(L.pixel_scale));
       glColor4f(0.02F, 0.03F, 0.05F, 0.75F);
@@ -950,7 +964,8 @@ void draw_frame_globe(const cw::engine::Engine& eng, int vp_w, int vp_h, int cur
                       const cw::render::WorldVectorMerc* world_vec, unsigned world_tex_gl,
                       const cw::render::WorldVectorLines* coastlines,
                       const cw::render::WorldVectorLines* boundary_lines, IconTextureCache& icon_cache,
-                      bool draw_simulation_layers, SituationHud* hud_out, GLuint hud_font_base) {
+                      bool draw_simulation_layers, SituationHud* hud_out, GLuint hud_font_base,
+                      bool clear_buffers) {
   (void)icon_cache;
 
   cw::render::MercatorBounds b{};
@@ -989,8 +1004,10 @@ void draw_frame_globe(const cw::engine::Engine& eng, int vp_w, int vp_h, int cur
 
   std::vector<cw::render::GlobeLonLatLabel> globe_grid_labels{};
 
-  glClearColor(0.02F, 0.03F, 0.05F, 1.F);
-  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+  if (clear_buffers) {
+    glClearColor(0.02F, 0.03F, 0.05F, 1.F);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+  }
   glEnable(GL_DEPTH_TEST);
   glDepthFunc(GL_LEQUAL);
 
@@ -1207,22 +1224,26 @@ void draw_hud_gl(int vp_w, int vp_h, GLuint font_base, const SituationHud& hud,
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     constexpr float kPad = 4.F;
+    GLint gl_vp[4]{};
+    glGetIntegerv(GL_VIEWPORT, gl_vp);
+    const float clip_l = static_cast<float>(gl_vp[0]) + kPad;
+    const float clip_b = static_cast<float>(gl_vp[1]) + kPad;
+    const float clip_r = static_cast<float>(gl_vp[0] + gl_vp[2]) - kPad;
+    const float clip_t = static_cast<float>(gl_vp[1] + gl_vp[3]) - kPad;
     for (const auto& L : *grid_labels) {
       if (L.text[0] == '\0') {
         continue;
       }
       float rx = L.sx + L.ox;
       float ry = L.sy + L.oy;
-      const float x1 = static_cast<float>(vp_w) - kPad;
-      const float y1 = static_cast<float>(vp_h) - kPad;
-      if (rx < kPad || ry < kPad || rx > x1 || ry > y1) {
+      if (rx < clip_l || ry < clip_b || rx > clip_r || ry > clip_t) {
         continue;
       }
       float rx2 = rx + 1.F;
       float ry2 = ry + 1.F;
-      if (rx2 < kPad || ry2 < kPad || rx2 > x1 || ry2 > y1) {
-        rx2 = std::clamp(rx2, kPad, x1);
-        ry2 = std::clamp(ry2, kPad, y1);
+      if (rx2 < clip_l || ry2 < clip_b || rx2 > clip_r || ry2 > clip_t) {
+        rx2 = std::clamp(rx2, clip_l, clip_r);
+        ry2 = std::clamp(ry2, clip_b, clip_t);
       }
       glPixelZoom(static_cast<GLfloat>(L.pixel_scale), static_cast<GLfloat>(L.pixel_scale));
       glColor4f(0.02F, 0.03F, 0.05F, 0.75F);
@@ -1263,20 +1284,42 @@ void draw_hud_gl(int vp_w, int vp_h, GLuint font_base, const SituationHud& hud,
 }
 #endif
 
-void draw_frame(const cw::engine::Engine& eng, int vp_w, int vp_h, int cursor_mx, int cursor_my,
-                const cw::render::WorldVectorMerc* world_vec, unsigned world_tex_gl,
-                const cw::render::WorldVectorLines* coastlines,
-                const cw::render::WorldVectorLines* boundary_lines, IconTextureCache& icon_cache,
-                bool draw_simulation_layers, SituationHud* hud_out, GLuint hud_font_base,
-                ViewMode view_mode) {
-  if (view_mode != ViewMode::Globe3d) {
-    reset_globe_view_auxiliary_state();
-  }
-  if (view_mode == ViewMode::Globe3d) {
-    draw_frame_globe(eng, vp_w, vp_h, cursor_mx, cursor_my, world_vec, world_tex_gl, coastlines,
-                      boundary_lines, icon_cache, draw_simulation_layers, hud_out, hud_font_base);
+void draw_split_divider(int vp_w, int vp_h, int split_x) {
+  if (vp_w < 4 || vp_h < 4 || split_x <= 0 || split_x >= vp_w) {
     return;
   }
+  glDisable(GL_DEPTH_TEST);
+  glDisable(GL_TEXTURE_2D);
+  glMatrixMode(GL_PROJECTION);
+  glPushMatrix();
+  glLoadIdentity();
+  glOrtho(0.0, static_cast<double>(vp_w), static_cast<double>(vp_h), 0.0, -1.0, 1.0);
+  glMatrixMode(GL_MODELVIEW);
+  glPushMatrix();
+  glLoadIdentity();
+  glColor3f(0.48F, 0.5F, 0.54F);
+  glLineWidth(2.F);
+  glBegin(GL_LINES);
+  {
+    const double x = static_cast<double>(split_x) + 0.5;
+    glVertex2d(x, 0.0);
+    glVertex2d(x, static_cast<double>(vp_h));
+  }
+  glEnd();
+  glLineWidth(1.F);
+  glColor3f(1.F, 1.F, 1.F);
+  glPopMatrix();
+  glMatrixMode(GL_PROJECTION);
+  glPopMatrix();
+  glMatrixMode(GL_MODELVIEW);
+}
+
+void draw_frame_tactical(const cw::engine::Engine& eng, int vp_w, int vp_h, int cursor_mx, int cursor_my,
+                         const cw::render::WorldVectorMerc* world_vec, unsigned world_tex_gl,
+                         const cw::render::WorldVectorLines* coastlines,
+                         const cw::render::WorldVectorLines* boundary_lines, IconTextureCache& icon_cache,
+                         bool draw_simulation_layers, SituationHud* hud_out, GLuint hud_font_base,
+                         bool clear_color_buffer) {
   cw::render::MercatorBounds b{};
   g_tactical_map.expand_bounds_from_engine(eng, b);
   cw::render::MercatorOrthoFrustum tactical{};
@@ -1311,8 +1354,10 @@ void draw_frame(const cw::engine::Engine& eng, int vp_w, int vp_h, int cursor_mx
     *hud_out = hud;
   }
 
-  glClearColor(0.02F, 0.03F, 0.05F, 1.F);
-  glClear(GL_COLOR_BUFFER_BIT);
+  if (clear_color_buffer) {
+    glClearColor(0.02F, 0.03F, 0.05F, 1.F);
+    glClear(GL_COLOR_BUFFER_BIT);
+  }
 
   glDisable(GL_DEPTH_TEST);
 
@@ -1328,7 +1373,6 @@ void draw_frame(const cw::engine::Engine& eng, int vp_w, int vp_h, int cursor_mx
 
   {
     const float ww = tactical.r - tactical.l;
-    // 行政国界较细，海岸线较粗且偏亮，便于在洋面上辨认大陆轮廓。
     if (boundary_lines != nullptr && boundary_lines->valid()) {
       glLineWidth(std::clamp(ww / 520000.F, 0.4F, 2.2F));
       glColor3f(0.38F, 0.33F, 0.27F);
@@ -1372,6 +1416,58 @@ void draw_frame(const cw::engine::Engine& eng, int vp_w, int vp_h, int cursor_mx
 #endif
 }
 
+void draw_frame_split(const cw::engine::Engine& eng, int vp_w, int vp_h, int cursor_mx, int cursor_my,
+                      const cw::render::WorldVectorMerc* world_vec, unsigned world_tex_gl,
+                      const cw::render::WorldVectorLines* coastlines,
+                      const cw::render::WorldVectorLines* boundary_lines, IconTextureCache& icon_cache,
+                      bool draw_simulation_layers, SituationHud* hud_out, GLuint hud_font_base) {
+  const int split_x = std::max(1, vp_w / 2);
+  const int right_w = std::max(1, vp_w - split_x);
+  const int t_mx =
+      (cursor_mx >= 0 && cursor_mx < split_x) ? cursor_mx : std::clamp(split_x / 2, 0, split_x - 1);
+  const int t_my = cursor_my;
+  const int g_mx = (cursor_mx >= split_x) ? (cursor_mx - split_x) : std::clamp(right_w / 2, 0, right_w - 1);
+  const int g_my = cursor_my;
+
+  glViewport(0, 0, vp_w, vp_h);
+  glClearColor(0.02F, 0.03F, 0.05F, 1.F);
+  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+  glViewport(0, 0, split_x, vp_h);
+  draw_frame_tactical(eng, split_x, vp_h, t_mx, t_my, world_vec, world_tex_gl, coastlines, boundary_lines,
+                      icon_cache, draw_simulation_layers, hud_out, hud_font_base, false);
+
+  glViewport(split_x, 0, right_w, vp_h);
+  draw_frame_globe(eng, right_w, vp_h, g_mx, g_my, world_vec, world_tex_gl, coastlines, boundary_lines,
+                   icon_cache, draw_simulation_layers, hud_out, hud_font_base, false);
+
+  glViewport(0, 0, vp_w, vp_h);
+  draw_split_divider(vp_w, vp_h, split_x);
+}
+
+void draw_frame(const cw::engine::Engine& eng, int vp_w, int vp_h, int cursor_mx, int cursor_my,
+                const cw::render::WorldVectorMerc* world_vec, unsigned world_tex_gl,
+                const cw::render::WorldVectorLines* coastlines,
+                const cw::render::WorldVectorLines* boundary_lines, IconTextureCache& icon_cache,
+                bool draw_simulation_layers, SituationHud* hud_out, GLuint hud_font_base,
+                ViewMode view_mode) {
+  if (view_mode == ViewMode::Tactical2D) {
+    reset_globe_view_auxiliary_state();
+  }
+  if (view_mode == ViewMode::Globe3d) {
+    draw_frame_globe(eng, vp_w, vp_h, cursor_mx, cursor_my, world_vec, world_tex_gl, coastlines,
+                      boundary_lines, icon_cache, draw_simulation_layers, hud_out, hud_font_base, true);
+    return;
+  }
+  if (view_mode == ViewMode::Split2dGlobe) {
+    draw_frame_split(eng, vp_w, vp_h, cursor_mx, cursor_my, world_vec, world_tex_gl, coastlines,
+                      boundary_lines, icon_cache, draw_simulation_layers, hud_out, hud_font_base);
+    return;
+  }
+  draw_frame_tactical(eng, vp_w, vp_h, cursor_mx, cursor_my, world_vec, world_tex_gl, coastlines,
+                      boundary_lines, icon_cache, draw_simulation_layers, hud_out, hud_font_base, true);
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -1409,6 +1505,7 @@ int main(int argc, char** argv) {
     g_hmenu_view = h_view;
     AppendMenuW(h_view, MF_STRING | MF_CHECKED, static_cast<UINT_PTR>(kMenuView2d), L"2D tactical map");
     AppendMenuW(h_view, MF_STRING, static_cast<UINT_PTR>(kMenuView3d), L"3D globe");
+    AppendMenuW(h_view, MF_STRING, static_cast<UINT_PTR>(kMenuViewSplit2d3d), L"2D + 3D split view");
     AppendMenuW(h_view, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(h_view, MF_STRING, static_cast<UINT_PTR>(kMenuGlobeLighting), L"三维地图光照");
     AppendMenuW(h_bar, MF_POPUP, reinterpret_cast<UINT_PTR>(h_view), L"View");
@@ -1555,22 +1652,43 @@ int main(int argc, char** argv) {
   while (win.is_open() && !win.should_close()) {
     win.poll_events();
 
+    bool split_left_driven = false;
+    bool split_right_driven = false;
+
     const int cw = win.client_width();
     const int ch = win.client_height();
     if (win.left_button_down()) {
       if (g_drag_prev_valid) {
-        if (g_view_mode == ViewMode::Tactical2D) {
-          const int dx = win.mouse_client_x() - g_drag_prev_mx;
+        const int split_x = std::max(1, cw / 2);
+        const int mx = win.mouse_client_x();
+        /// 分屏时以**上一帧**光标所在半幅判定拖动归属，避免扫过中缝时来回切换。
+        const bool split_drag_left =
+            (g_view_mode != ViewMode::Split2dGlobe) || (g_drag_prev_mx < split_x);
+        const bool split_drag_right =
+            (g_view_mode == ViewMode::Split2dGlobe) && !split_drag_left;
+        if (g_view_mode == ViewMode::Tactical2D || split_drag_left) {
+          const int dx = mx - g_drag_prev_mx;
           const int dy = win.mouse_client_y() - g_drag_prev_my;
-          g_tactical_map.apply_mouse_pan_drag(engine, cw, ch, dx, dy);
-        } else {
-          /// 三维：弧球拖动，使光标下地表经纬点跟随鼠标（`content_R` 在本帧 `setup_projection_and_modelview` 中更新）。
+          const int pan_w = (g_view_mode == ViewMode::Split2dGlobe) ? split_x : cw;
+          g_tactical_map.apply_mouse_pan_drag(engine, pan_w, ch, dx, dy);
+          if (g_view_mode == ViewMode::Split2dGlobe && (dx != 0 || dy != 0)) {
+            split_left_driven = true;
+          }
+        } else if (g_view_mode == ViewMode::Globe3d || split_drag_right) {
+          /// 三维：弧球拖动；分屏时坐标相对于右半幅视口。
           const int pmx = g_drag_prev_mx;
           const int pmy = g_drag_prev_my;
-          const int cmx = win.mouse_client_x();
+          const int cmx = mx;
           const int cmy = win.mouse_client_y();
           if (pmx != cmx || pmy != cmy) {
-            g_globe_view.queue_arcball_drag(pmx, pmy, cmx, cmy);
+            if (g_view_mode == ViewMode::Split2dGlobe) {
+              g_globe_view.queue_arcball_drag(pmx - split_x, pmy, cmx - split_x, cmy);
+            } else {
+              g_globe_view.queue_arcball_drag(pmx, pmy, cmx, cmy);
+            }
+            if (g_view_mode == ViewMode::Split2dGlobe) {
+              split_right_driven = true;
+            }
           }
         }
       }
@@ -1600,7 +1718,19 @@ int main(int argc, char** argv) {
     {
       const int wd = win.consume_wheel_delta();
       if (wd != 0) {
-        if (g_view_mode == ViewMode::Globe3d) {
+        const int split_x = std::max(1, cw / 2);
+        const int mx = win.mouse_client_x();
+        if (g_view_mode == ViewMode::Split2dGlobe) {
+          if (mx < split_x) {
+            split_left_driven = true;
+          } else {
+            split_right_driven = true;
+          }
+        }
+        const bool wheel_on_globe =
+            (g_view_mode == ViewMode::Globe3d) ||
+            (g_view_mode == ViewMode::Split2dGlobe && mx >= split_x);
+        if (wheel_on_globe) {
           /// 在 **h=distance-1** 上乘除步进，而不是在 distance 上乘除：否则贴地时一格滚轮会把 h 加上约
           /// (kStep-1)（~0.02），比例尺会从 ~1:300 跳到 ~1:3e5。离地越近 kStep 越接近 1，末端更细腻。
           constexpr float kGlobeDistMin = 1.00002F;
@@ -1624,6 +1754,63 @@ int main(int argc, char** argv) {
     win.make_current();
 #endif
     glViewport(0, 0, cw, ch);
+
+    if (g_view_mode == ViewMode::Split2dGlobe) {
+      const int split_x = std::max(1, cw / 2);
+      const int right_w = std::max(1, cw - split_x);
+      if (g_globe_view.arcball_pending()) {
+        glViewport(split_x, 0, right_w, ch);
+        g_globe_view.setup_projection_and_modelview(right_w, ch);
+        glViewport(0, 0, cw, ch);
+      }
+      cw::render::MercatorBounds b{};
+      g_tactical_map.expand_bounds_from_engine(engine, b);
+      cw::render::MercatorOrthoFrustum tact{};
+      g_tactical_map.compute_interactive_frustum(b, split_x, ch, tact);
+      const double tcx = static_cast<double>((tact.l + tact.r) * 0.5F);
+      const double tcy = static_cast<double>((tact.b + tact.t) * 0.5F);
+      double t_lon = 0.;
+      double t_lat = 0.;
+      mercator_meters_to_lonlat(tcx, tcy, t_lon, t_lat);
+      double g_lon = 0.;
+      double g_lat = 0.;
+      g_globe_view.viewport_center_lonlat_from_pose(g_lon, g_lat);
+      constexpr double kPi = 3.14159265358979323846;
+      auto tactical_center_ew_m = [](const cw::render::MercatorOrthoFrustum& t, double lat_deg) -> double {
+        const double lat_r = lat_deg * (kPi / 180.0);
+        return static_cast<double>(t.r - t.l) * std::max(1e-4, std::cos(lat_r));
+      };
+      auto sync_scale_left_to_right = [&]() {
+        const double ew = tactical_center_ew_m(tact, t_lat);
+        if (ew > 1.0) {
+          g_globe_view.set_camera_distance_for_visible_ew_meters(right_w, ch, ew);
+        }
+      };
+      auto sync_scale_right_to_left = [&]() {
+        const double ew = g_globe_view.visible_ground_ew_meters(right_w, ch);
+        if (ew > 1.0) {
+          g_tactical_map.set_visible_ground_ew_meters_at_lat(engine, split_x, ch, ew, g_lat);
+        }
+      };
+
+      if (g_split_initial_sync_pending) {
+        g_globe_view.orient_content_to_place_lonlat_at_screen_center(t_lon, t_lat);
+        g_split_initial_sync_pending = false;
+        sync_scale_left_to_right();
+      } else if (split_left_driven || split_right_driven) {
+        if (split_left_driven && !split_right_driven) {
+          g_globe_view.orient_content_to_place_lonlat_at_screen_center(t_lon, t_lat);
+          sync_scale_left_to_right();
+        } else if (split_right_driven && !split_left_driven) {
+          g_tactical_map.set_frustum_center_lonlat(engine, split_x, ch, g_lon, g_lat);
+          sync_scale_right_to_left();
+        } else {
+          g_globe_view.orient_content_to_place_lonlat_at_screen_center(t_lon, t_lat);
+          sync_scale_left_to_right();
+        }
+      }
+    }
+
     draw_frame(engine, cw, ch, win.mouse_client_x(), win.mouse_client_y(),
                world_vec.valid() ? &world_vec : nullptr,
                world_tex.valid() ? world_tex.gl_name : 0U,

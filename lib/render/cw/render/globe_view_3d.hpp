@@ -45,11 +45,24 @@ public:
   /// 取消未应用的弧球队列（例如左键已松开，避免下一帧误用旧像素对）。
   void clear_arcball_pending() noexcept;
 
+  /// 是否有尚未在 `setup_projection_and_modelview` 中乘入 `content_R` 的弧球拖动（分屏同步前可先刷新姿态）。
+  bool arcball_pending() const noexcept { return arcball_pending_; }
+
   /// 设置透视投影并将 MODELVIEW 设为 lookAt(eye→0)×content_R；若本帧有待处理弧球拖动则更新 R 并重载 MODELVIEW。
   void setup_projection_and_modelview(int vp_w, int vp_h);
 
   bool try_pixel_unit_world(int mx, int my, int vp_w, int vp_h, double& ux, double& uy, double& uz) const;
   bool try_pixel_lonlat(int mx, int my, int vp_w, int vp_h, double& lon_deg, double& lat_deg) const;
+
+  /// 由当前 `yaw/pitch/distance` 与 `content_R` 解析视口中心射线与球面交点的经纬度（与 `try_pixel_lonlat(vp/2)` 一致，不依赖 GL）。
+  void viewport_center_lonlat_from_pose(double& lon_deg, double& lat_deg) const noexcept;
+  /// 调整 `content_R`，使给定经纬度落在屏幕中心（不改变轨道相机参数）；随后做北向滚转对齐。
+  void orient_content_to_place_lonlat_at_screen_center(double lon_deg, double lat_deg) noexcept;
+
+  /// 当前透视与 `distance` 下，视口中心附近东西向地面宽度（米），与 HUD 比例尺算法一致（WGS84 半径、`fovy=50°`）。
+  double visible_ground_ew_meters(int vp_w, int vp_h) const noexcept;
+  /// 设置 `camera().distance`，使上述东西向地面宽度接近 `physical_ew_m`（与 `setup_projection_and_modelview` 的投影一致）。
+  void set_camera_distance_for_visible_ew_meters(int vp_w, int vp_h, double physical_ew_m) noexcept;
 
   /// 转发 `cw::math::mat4_mul_col_major`（OpenGL 列主序）。
   static void mat4_mul_col(const double* a, const double* b, double* o);
