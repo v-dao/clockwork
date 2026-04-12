@@ -9,7 +9,7 @@ Clockwork 使用自研文本想定，扩展名建议 `.cws`（Clockwork Scenario
 - **分词**：以空白分隔 token；`entity_attr`、`entity_mparam`、`air_attr` 等命令中，**值**为从指定列起**整行剩余部分**（可含空格）。
 - **版本**：文件中必须出现一行 `version 1` 或 `version 2`。语法相同，`2` 为演进标记；解析后写入 `Scenario::version`。
 - **实体顺序**：`entity` 必须先于针对该实体名的扩展行（`entity_faction`、`entity_mparam` 等）。
-- **航线**：必须先有 `route <id> ...`，再对该 `id` 使用 `route_pt`。
+- **航线**：必须先有 `route <id> ...`，再对该 `id` 使用 `route_pt` / `route_pt_geo`；可选 `route_attr` 设置显示颜色与线宽。
 - **多边形空域**：必须先 `airspace_poly <id>`，再对该 `id` 使用 `ap_vert`（至少 3 个顶点方可通过校验）。
 - **通信**：`comm_link` 引用的节点 id 必须已在 `comm_node` 中定义；`comm_node` 的 `entity <name>` 须为已声明的实体名。
 
@@ -110,11 +110,16 @@ entity_script charlie bp bp/decoy.json
 route <route_id> <display_name_one_token>
 route_pt <route_id> <mx> <my> <mz>
 route_pt_geo <route_id> <lon_deg> <lat_deg> <alt_m>
+route_attr <route_id> color <r> <g> <b>
+route_attr <route_id> color <#RRGGBB|#RGB|颜色名>
+route_attr <route_id> width <px>
 ```
 
 - `route_pt`：墨卡托米 + 海拔米。
 - `route_pt_geo`：经纬度 + 海拔，内部转为墨卡托米。
 - `display_name` 当前解析为**单个 token**（若需空格应改用下划线或在展示层映射）。
+- `route_attr … color`：航线在二维/三维态势中的线条颜色；写法与 **`entity_color`** 相同（`0～255` 三整数、十六进制或颜色名）。未写则默认灰。
+- `route_attr … width`：线条宽度（OpenGL 线宽，单位像素），范围 **(0, 64]**。未写则默认 `1.5`。
 
 ### 空域
 

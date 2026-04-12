@@ -280,7 +280,8 @@ void draw_globe_lonlat_grid(int vp_w, int vp_h, float camera_distance, const dou
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
   /// 略将线推向近裁剪面，减轻与球面及线–线交点处的深度抖动（半透明线时尤其明显）。
   glEnable(GL_POLYGON_OFFSET_LINE);
-  glPolygonOffset(0.F, -3.F);
+  /// 略加强偏移，减轻经纬线被球面（尤其 GLSL 球）深度挡在后面的情况。
+  glPolygonOffset(-0.75F, -10.F);
   glLineWidth(1.0F);
   glColor4f(0.78F, 0.82F, 0.86F, 0.52F);
 

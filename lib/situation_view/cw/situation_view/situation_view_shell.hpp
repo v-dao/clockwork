@@ -20,6 +20,19 @@ namespace cw::situation_view {
 /// 与 `situation_view` 主循环配套的视图模式。
 enum class ViewMode { Tactical2D, Globe3d, Split2dGlobe };
 
+/// 客户端坐标系（左上原点）下的子矩形，作为二维/三维「地图窗口」：鼠标先落在此层，再换算为子视口局部像素。
+struct MapWindow {
+  int x = 0;
+  int y = 0;
+  int w = 1;
+  int h = 1;
+  [[nodiscard]] bool contains(int mx, int my) const noexcept {
+    return mx >= x && mx < x + w && my >= y && my < y + h;
+  }
+  [[nodiscard]] int to_local_x(int mx) const noexcept { return mx - x; }
+  [[nodiscard]] int to_local_y(int my) const noexcept { return my - y; }
+};
+
 /// 封装战术图/地球相机状态、Win32 视图菜单、鼠标拖动与滚轮、分屏中心与比例尺同步。
 class SituationViewShell {
  public:
@@ -30,6 +43,11 @@ class SituationViewShell {
 
   [[nodiscard]] ViewMode view_mode() const noexcept { return view_mode_; }
   void set_view_mode(ViewMode m) noexcept { view_mode_ = m; }
+
+  /// 当前模式下战术墨卡托子区域（分屏为左半窗，否则整窗）。
+  [[nodiscard]] MapWindow tactical_map_window(int client_w, int client_h) const noexcept;
+  /// 当前模式下三维地球子区域（分屏为右半窗，否则整窗）。
+  [[nodiscard]] MapWindow globe_map_window(int client_w, int client_h) const noexcept;
 
   void reset_view_camera() noexcept;
   void reset_globe_auxiliary_state() noexcept { globe_.reset_content_orientation(); }
@@ -64,7 +82,15 @@ class SituationViewShell {
     return split_matched_lonlat_grid_step_deg_;
   }
 
+  /// 供二三维切换时同步视口（场景外包络依赖引擎）；建议在创建 `Engine` 后始终设置。
+  void set_viewport_sync_engine(cw::engine::Engine* engine) noexcept { viewport_sync_engine_ = engine; }
+
  private:
+  void sync_globe_from_tactical_viewport(cw::engine::Engine& engine, int client_w, int client_h,
+                                          int tactical_frustum_vp_w) noexcept;
+  void sync_tactical_from_globe_viewport(cw::engine::Engine& engine, int client_w, int client_h,
+                                         int globe_vp_w_for_ew_readout) noexcept;
+
 #ifdef _WIN32
   void on_win32_menu_command(unsigned cmd);
   static void win32_menu_thunk(unsigned cmd, void* user);
@@ -73,6 +99,7 @@ class SituationViewShell {
   cw::render::TacticalMercatorMap tactical_{};
   cw::render::GlobeEarthView globe_{};
   ViewMode view_mode_ = ViewMode::Tactical2D;
+  cw::engine::Engine* viewport_sync_engine_ = nullptr;
   bool split_initial_sync_pending_ = false;
   /// 分屏时是否把战术图东西向宽度与地球透视水平宽度互相同步（默认开）。
   bool split_scale_sync_enabled_ = true;

@@ -4,7 +4,7 @@ version 2
 
 # entity 仅声明挂载模型；位置/机体系速度与姿态用 entity_pos、entity_vel、entity_att（默认 0）
 entity alpha mover sensor
-entity_pos alpha geo 0 0 1000
+entity_pos alpha geo 0 0 0
 entity_att alpha 45 0 0
 entity_vel alpha 10 5 0
 entity_id alpha UAV-A001
@@ -30,6 +30,8 @@ route patrol1 north_patrol
 route_pt_geo patrol1 0 0 0
 route_pt_geo patrol1 0.5 0 0
 route_pt_geo patrol1 0.5 0.5 0
+route_attr patrol1 color 255 180 64
+route_attr patrol1 width 2.5
 
 # mover route 填航线 id（route 行第一个 token），与展示名 north_patrol 不同
 entity_mparam alpha mover route patrol1

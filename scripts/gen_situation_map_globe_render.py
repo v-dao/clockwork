@@ -175,13 +175,25 @@ def main() -> int:
     text = text.replace(
         "draw_frame_globe(eng, shell, right_w, vp_h, g_mx, g_my, world_vec, world_tex_gl, coastlines, boundary_lines,\n"
         "                   icon_cache, draw_simulation_layers, hud_out, hud_font_base, false);",
-        "draw_frame_globe(eng, shell, right_w, vp_h, g_mx, g_my, world_vec, world_tex_gl, coastlines, boundary_lines,\n"
+        "draw_frame_globe(eng, shell, right_w, vp_h, split_x, g_mx, g_my, world_vec, world_tex_gl, coastlines, boundary_lines,\n"
         "                   icon_cache, draw_simulation_layers, hud_out, hud_font_base, false, opts);",
     )
     text = text.replace(
         "draw_frame_globe(eng, shell, vp_w, vp_h, cursor_mx, cursor_my, world_vec, world_tex_gl, coastlines,\n"
         "                      boundary_lines, icon_cache, draw_simulation_layers, hud_out, hud_font_base, true);",
+        "draw_frame_globe(eng, shell, vp_w, vp_h, vp_w, cursor_mx, cursor_my, world_vec, world_tex_gl, coastlines,\n"
+        "                      boundary_lines, icon_cache, draw_simulation_layers, hud_out, hud_font_base, true, opts);",
+    )
+    text = text.replace(
+        "draw_frame_globe(eng, shell, right_w, vp_h, g_mx, g_my, world_vec, world_tex_gl, coastlines, boundary_lines,\n"
+        "                   icon_cache, draw_simulation_layers, hud_out, hud_font_base, false, opts);",
+        "draw_frame_globe(eng, shell, right_w, vp_h, split_x, g_mx, g_my, world_vec, world_tex_gl, coastlines, boundary_lines,\n"
+        "                   icon_cache, draw_simulation_layers, hud_out, hud_font_base, false, opts);",
+    )
+    text = text.replace(
         "draw_frame_globe(eng, shell, vp_w, vp_h, cursor_mx, cursor_my, world_vec, world_tex_gl, coastlines,\n"
+        "                      boundary_lines, icon_cache, draw_simulation_layers, hud_out, hud_font_base, true, opts);",
+        "draw_frame_globe(eng, shell, vp_w, vp_h, vp_w, cursor_mx, cursor_my, world_vec, world_tex_gl, coastlines,\n"
         "                      boundary_lines, icon_cache, draw_simulation_layers, hud_out, hud_font_base, true, opts);",
     )
     text = text.replace(

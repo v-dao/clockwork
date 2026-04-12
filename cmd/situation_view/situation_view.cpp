@@ -88,6 +88,7 @@ int main(int argc, char** argv) {
   }
 
   cw::situation_view::SituationViewShell shell;
+  shell.set_viewport_sync_engine(&engine);
   shell.install_win32_view_menu(win);
   if (!map_only) {
     shell.set_simulation_menu_engine(&engine);

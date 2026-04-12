@@ -38,9 +38,11 @@ void draw_frame_tactical(const cw::engine::Engine& eng, SituationViewShell& shel
                          bool draw_simulation_layers, SituationHud* hud_out, GLuint hud_font_base,
                          bool clear_color_buffer, const SituationRenderOptions& opts);
 
+/// `vp_w`/`vp_h`：当前 OpenGL 地球视口；`tactical_frustum_vp_w`：与战术图 `compute_interactive_frustum` 一致的宽度（分屏时为左半宽，与纯三维整窗不同）。
 void draw_frame_globe(const cw::engine::Engine& eng, SituationViewShell& shell, int vp_w, int vp_h,
-                      int cursor_mx, int cursor_my, const cw::render::WorldVectorMerc* world_vec,
-                      unsigned world_tex_gl, const cw::render::WorldVectorLines* coastlines,
+                      int tactical_frustum_vp_w, int cursor_mx, int cursor_my,
+                      const cw::render::WorldVectorMerc* world_vec, unsigned world_tex_gl,
+                      const cw::render::WorldVectorLines* coastlines,
                       const cw::render::WorldVectorLines* boundary_lines, IconTextureCache& icon_cache,
                       bool draw_simulation_layers, SituationHud* hud_out, GLuint hud_font_base,
                       bool clear_buffers, const SituationRenderOptions& opts);

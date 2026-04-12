@@ -13,6 +13,7 @@
 #include "cw/ecs/entity_coordinate_system.hpp"
 #include "cw/engine/engine.hpp"
 #include "cw/engine/types.hpp"
+#include "cw/scenario/scenario.hpp"
 #include "cw/render/globe_program.hpp"
 #include "cw/render/globe_view_3d.hpp"
 #include "cw/render/lonlat_grid.hpp"
@@ -37,6 +38,26 @@
 namespace cw::situation_view {
 
 using cw::render::mercator_meters_to_lonlat;
+
+namespace {
+
+void route_line_rgb(const cw::scenario::ScenarioRoute& r, float& out_r, float& out_g, float& out_b) {
+  if (r.has_line_color) {
+    out_r = r.line_r;
+    out_g = r.line_g;
+    out_b = r.line_b;
+  } else {
+    out_r = 0.55F;
+    out_g = 0.55F;
+    out_b = 0.6F;
+  }
+}
+
+float route_line_width_px(const cw::scenario::ScenarioRoute& r) {
+  return r.has_line_width ? r.line_width_px : 1.5F;
+}
+
+}  // namespace
 
 #ifdef _WIN32
 using GlWindowPos2fFn = void(APIENTRY*)(GLfloat, GLfloat);
@@ -166,13 +187,17 @@ void draw_airspaces(const cw::engine::Engine& eng, float cx_ref) {
 }
 
 void draw_routes(const cw::engine::Engine& eng, float cx_ref) {
-  glLineWidth(1.5F);
-  glColor3f(0.55F, 0.55F, 0.6F);
   const float W = cw::render::TacticalMercatorMap::kWorldWidthM;
   for (const auto& r : eng.routes()) {
     if (r.waypoints.size() < 2) {
       continue;
     }
+    float cr = 0.F;
+    float cg = 0.F;
+    float cb = 0.F;
+    route_line_rgb(r, cr, cg, cb);
+    glLineWidth(route_line_width_px(r));
+    glColor3f(cr, cg, cb);
     glBegin(GL_LINE_STRIP);
     float px = cw::render::TacticalMercatorMap::mercator_periodic_x(r.waypoints[0].x, cx_ref);
     glVertex2f(px, r.waypoints[0].y);
@@ -399,14 +424,18 @@ void draw_globe_sphere(unsigned tex_gl) {
 
 void draw_routes_globe(const cw::engine::Engine& eng, float cx_ref) {
   glDisable(GL_TEXTURE_2D);
-  glLineWidth(1.5F);
-  glColor3f(0.55F, 0.55F, 0.6F);
   const float W = cw::render::TacticalMercatorMap::kWorldWidthM;
   constexpr float kR = 1.002F;
   for (const auto& r : eng.routes()) {
     if (r.waypoints.size() < 2) {
       continue;
     }
+    float cr = 0.F;
+    float cg = 0.F;
+    float cb = 0.F;
+    route_line_rgb(r, cr, cg, cb);
+    glLineWidth(route_line_width_px(r));
+    glColor3f(cr, cg, cb);
     glBegin(GL_LINE_STRIP);
     float px = cw::render::TacticalMercatorMap::mercator_periodic_x(r.waypoints[0].x, cx_ref);
     for (std::size_t i = 0; i < r.waypoints.size(); ++i) {
@@ -726,8 +755,9 @@ void draw_hud_gl_globe_variant(int vp_w, int vp_h, GLuint font_base, const Situa
 }
 
 void draw_frame_globe(const cw::engine::Engine& eng, SituationViewShell& shell, int vp_w,
-                      int vp_h, int cursor_mx, int cursor_my, const cw::render::WorldVectorMerc* world_vec,
-                      unsigned world_tex_gl, const cw::render::WorldVectorLines* coastlines,
+                      int vp_h, int tactical_frustum_vp_w, int cursor_mx, int cursor_my,
+                      const cw::render::WorldVectorMerc* world_vec, unsigned world_tex_gl,
+                      const cw::render::WorldVectorLines* coastlines,
                       const cw::render::WorldVectorLines* boundary_lines, IconTextureCache& icon_cache,
                       bool draw_simulation_layers, SituationHud* hud_out, GLuint hud_font_base,
                       bool clear_buffers, const SituationRenderOptions& opts) {
@@ -736,7 +766,8 @@ void draw_frame_globe(const cw::engine::Engine& eng, SituationViewShell& shell, 
   cw::render::MercatorBounds b{};
   shell.tactical_map().expand_bounds_from_engine(eng, b);
   cw::render::MercatorOrthoFrustum tactical{};
-  shell.tactical_map().compute_interactive_frustum(b, vp_w, vp_h, tactical);
+  const int tact_w = std::max(1, tactical_frustum_vp_w);
+  shell.tactical_map().compute_interactive_frustum(b, tact_w, vp_h, tactical);
   const float cx_ref = (tactical.l + tactical.r) * 0.5F;
 
   SituationHud hud{};
@@ -789,6 +820,12 @@ void draw_frame_globe(const cw::engine::Engine& eng, SituationViewShell& shell, 
     const int myc = std::max(0, vp_h / 2);
     if (shell.globe_view().try_pixel_lonlat(mxc, myc, vp_w, vp_h, globe_viewport_center_lon,
                                              globe_viewport_center_lat)) {
+      hud.center_lon_deg = globe_viewport_center_lon;
+      hud.center_lat_deg = globe_viewport_center_lat;
+      globe_viewport_center_valid = true;
+    } else {
+      /// `gluUnProject` 偶发失败时仍用姿态解析中心，否则 `use_local_band` 为假且步长按 180° 球冠取，近距下网格极粗或似「消失」。
+      shell.globe_view().viewport_center_lonlat_from_pose(globe_viewport_center_lon, globe_viewport_center_lat);
       hud.center_lon_deg = globe_viewport_center_lon;
       hud.center_lat_deg = globe_viewport_center_lat;
       globe_viewport_center_valid = true;
@@ -855,12 +892,20 @@ void draw_frame_globe(const cw::engine::Engine& eng, SituationViewShell& shell, 
     float gez = 0.F;
     cw::render::GlobeEarthView::compute_eye(shell.globe_view().camera().yaw, shell.globe_view().camera().pitch,
                                             shell.globe_view().camera().distance, gex, gey, gez);
-    const double grid_step_2d_match =
-        (shell.view_mode() == ViewMode::Split2dGlobe) ? shell.split_matched_lonlat_grid_step_deg() : 0.;
+    /// 与分屏左侧一致：用战术墨卡托视锥的经纬跨度选步长。纯三维若仅用 `visible_sphere_diameter_deg(d)`，近距时仍接近 180°，与屏上实际小块不一致，网格会过粗或难以辨认。
+    const double span_deg = cw::render::tactical_frustum_lonlat_span_deg(tactical, cx_ref);
+    const float equiv_d = cw::render::tactical_equiv_camera_distance_from_span_deg(span_deg);
+    double grid_step_match = cw::render::pick_lonlat_step_deg(span_deg, equiv_d);
+    if (shell.view_mode() == ViewMode::Split2dGlobe) {
+      const double split_step = shell.split_matched_lonlat_grid_step_deg();
+      if (split_step > 0.0) {
+        grid_step_match = split_step;
+      }
+    }
     cw::render::draw_globe_lonlat_grid(vp_w, vp_h, shell.globe_view().camera().distance, shell.globe_view().content_R(),
                                        static_cast<double>(gex), static_cast<double>(gey), static_cast<double>(gez),
                                        kGlobeGridR, &globe_grid_labels, globe_viewport_center_valid,
-                                       globe_viewport_center_lon, globe_viewport_center_lat, grid_step_2d_match);
+                                       globe_viewport_center_lon, globe_viewport_center_lat, grid_step_match);
   }
   glLineWidth(1.F);
   glColor3f(1.F, 1.F, 1.F);
@@ -1295,8 +1340,8 @@ void draw_frame_split(const cw::engine::Engine& eng, SituationViewShell& shell, 
                       icon_cache, draw_simulation_layers, hud_out, hud_font_base, false, opts);
 
   glViewport(split_x, 0, right_w, vp_h);
-  draw_frame_globe(eng, shell, right_w, vp_h, g_mx, g_my, world_vec, world_tex_gl, coastlines, boundary_lines,
-                   icon_cache, draw_simulation_layers, hud_out, hud_font_base, false, opts);
+  draw_frame_globe(eng, shell, right_w, vp_h, split_x, g_mx, g_my, world_vec, world_tex_gl, coastlines,
+                   boundary_lines, icon_cache, draw_simulation_layers, hud_out, hud_font_base, false, opts);
 
   glViewport(0, 0, vp_w, vp_h);
   draw_split_divider(vp_w, vp_h, split_x);
@@ -1311,7 +1356,7 @@ void draw_frame(const cw::engine::Engine& eng, SituationViewShell& shell, int vp
     shell.reset_globe_auxiliary_state();
   }
   if (shell.view_mode() == ViewMode::Globe3d) {
-    draw_frame_globe(eng, shell, vp_w, vp_h, cursor_mx, cursor_my, world_vec, world_tex_gl, coastlines,
+    draw_frame_globe(eng, shell, vp_w, vp_h, vp_w, cursor_mx, cursor_my, world_vec, world_tex_gl, coastlines,
                       boundary_lines, icon_cache, draw_simulation_layers, hud_out, hud_font_base, true, opts);
   } else if (shell.view_mode() == ViewMode::Split2dGlobe) {
     draw_frame_split(eng, shell, vp_w, vp_h, cursor_mx, cursor_my, world_vec, world_tex_gl, coastlines,

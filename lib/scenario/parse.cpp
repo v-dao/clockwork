@@ -47,6 +47,9 @@ namespace cw::scenario {
   航线：
     route <route_id> <display_name_one_token>
     route_pt <route_id> <x> <y> <z>
+    route_attr <route_id> color <r> <g> <b>     # 0..255，与 entity_color 一致
+    route_attr <route_id> color <#hex|color_name>
+    route_attr <route_id> width <px>             # 线宽像素，(0,64]
 
   空域：
     airspace_box <id> <minx> <miny> <minz> <maxx> <maxy> <maxz>
@@ -326,6 +329,15 @@ ScenarioAirspace* find_airspace(Scenario& sc, const std::string& id) {
   for (auto& a : sc.airspaces) {
     if (a.id == id) {
       return &a;
+    }
+  }
+  return nullptr;
+}
+
+ScenarioRoute* find_route(Scenario& sc, const std::string& id) {
+  for (auto& r : sc.routes) {
+    if (r.id == id) {
+      return &r;
     }
   }
   return nullptr;
@@ -779,6 +791,55 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
       float mz = 0.F;
       lon_lat_alt_to_mercator(lon, lat, alt, mx, my, mz);
       rt->waypoints.push_back(RouteWaypoint{mx, my, mz});
+      continue;
+    }
+    if (ieq(cmd, "route_attr")) {
+      if (tok.size() < 4) {
+        return Error::ParseError;
+      }
+      ScenarioRoute* rt = find_route(out, tok[1]);
+      if (!rt) {
+        return Error::ParseError;
+      }
+      if (ieq(tok[2], "color")) {
+        if (tok.size() >= 6) {
+          unsigned ru = 0;
+          unsigned gu = 0;
+          unsigned bu = 0;
+          if (!parse_u8_255(tok[3], ru) || !parse_u8_255(tok[4], gu) || !parse_u8_255(tok[5], bu)) {
+            return Error::ParseError;
+          }
+          rt->has_line_color = true;
+          rt->line_r = static_cast<float>(ru) / 255.F;
+          rt->line_g = static_cast<float>(gu) / 255.F;
+          rt->line_b = static_cast<float>(bu) / 255.F;
+        } else if (tok.size() == 4) {
+          float rf = 0.F;
+          float gf = 0.F;
+          float bf = 0.F;
+          if (!parse_color_token(tok[3], rf, gf, bf)) {
+            return Error::ParseError;
+          }
+          rt->has_line_color = true;
+          rt->line_r = rf;
+          rt->line_g = gf;
+          rt->line_b = bf;
+        } else {
+          return Error::ParseError;
+        }
+      } else if (ieq(tok[2], "width")) {
+        if (tok.size() < 4) {
+          return Error::ParseError;
+        }
+        double w = 0;
+        if (!parse_double(tok[3], w) || !std::isfinite(w) || w <= 0.0 || w > 64.0) {
+          return Error::ParseError;
+        }
+        rt->has_line_width = true;
+        rt->line_width_px = static_cast<float>(w);
+      } else {
+        return Error::ParseError;
+      }
       continue;
     }
 

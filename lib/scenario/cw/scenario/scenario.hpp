@@ -59,6 +59,14 @@ struct ScenarioRoute {
   std::string id;
   std::string display_name;
   std::vector<RouteWaypoint> waypoints;
+  /// 若 `has_line_color` 为真，态势航线用 RGB（0..1）；否则为默认灰。
+  bool has_line_color = false;
+  float line_r = 0.55F;
+  float line_g = 0.55F;
+  float line_b = 0.6F;
+  /// 若 `has_line_width` 为真，使用 `line_width_px`（OpenGL 线宽，像素）；否则 1.5。
+  bool has_line_width = false;
+  float line_width_px = 1.5F;
 };
 
 enum class AirspaceKind : std::uint8_t { Box, Polygon };
