@@ -35,6 +35,9 @@ class GlWindow {
   [[nodiscard]] int client_width() const noexcept { return client_w_; }
   [[nodiscard]] int client_height() const noexcept { return client_h_; }
 
+  /// 从 OS 重新读取客户区（SetMenu 等会缩小客户区，未必触发 WM_SIZE；附加菜单后应调用）。
+  void sync_client_size_from_window() noexcept;
+
   /// 客户区像素坐标（左上为原点，y 向下），由 WM_MOUSEMOVE / 按下时更新。
   [[nodiscard]] int mouse_client_x() const noexcept { return mouse_x_; }
   [[nodiscard]] int mouse_client_y() const noexcept { return mouse_y_; }

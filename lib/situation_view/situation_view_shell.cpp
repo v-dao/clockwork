@@ -1,5 +1,7 @@
 #include "cw/situation_view/situation_view_shell.hpp"
 
+#include "cw/situation_view/situation_map_globe_render.hpp"
+
 #include "cw/engine/engine.hpp"
 #include "cw/render/gl_window.hpp"
 #include "cw/render/lonlat_grid.hpp"
@@ -47,6 +49,31 @@ void SituationViewShell::reset_view_camera() noexcept {
   tactical_.reset_camera();
   drag_prev_valid_ = false;
   globe_.reset_content_orientation();
+  picked_entity_id_.reset();
+}
+
+void SituationViewShell::process_entity_pick_mouse(cw::engine::Engine& eng, int client_w, int client_h,
+                                                   int mouse_x, int mouse_y, bool left_down,
+                                                   bool left_was_down) {
+  if (left_down && !left_was_down) {
+    pick_down_mx_ = mouse_x;
+    pick_down_my_ = mouse_y;
+    pick_drag_cancel_ = false;
+  }
+  if (left_down && left_was_down) {
+    const int dx = mouse_x - pick_down_mx_;
+    const int dy = mouse_y - pick_down_my_;
+    if (dx * dx + dy * dy > 64) {
+      pick_drag_cancel_ = true;
+    }
+  }
+  if (!left_down && left_was_down && !pick_drag_cancel_) {
+    if (auto id = try_pick_entity_at_screen(eng, *this, client_w, client_h, mouse_x, mouse_y)) {
+      picked_entity_id_ = std::move(id);
+    } else {
+      picked_entity_id_.reset();
+    }
+  }
 }
 
 void SituationViewShell::sync_globe_from_tactical_viewport(cw::engine::Engine& engine, int client_w,

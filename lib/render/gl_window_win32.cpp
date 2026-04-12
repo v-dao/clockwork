@@ -317,6 +317,15 @@ void GlWindow::make_current() const noexcept {
   }
 }
 
+void GlWindow::sync_client_size_from_window() noexcept {
+  if (!open_ || hwnd_ == nullptr) {
+    return;
+  }
+  RECT cr{};
+  GetClientRect(static_cast<HWND>(hwnd_), &cr);
+  win32_notify_client_size(cr.right - cr.left, cr.bottom - cr.top);
+}
+
 }  // namespace cw::render
 
 #else  // !_WIN32
@@ -332,6 +341,8 @@ void GlWindow::close() noexcept {}
 void GlWindow::poll_events() noexcept {}
 
 void GlWindow::swap_buffers() noexcept {}
+
+void GlWindow::sync_client_size_from_window() noexcept {}
 
 }  // namespace cw::render
 

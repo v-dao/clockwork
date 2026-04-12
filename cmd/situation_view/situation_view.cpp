@@ -95,6 +95,7 @@ int main(int argc, char** argv) {
     shell.set_scenario_for_reset(&sc);
     shell.install_win32_simulation_menu(win);
   }
+  win.sync_client_size_from_window();
 
   GLuint hud_font_base = 0;
   {
@@ -243,14 +244,19 @@ int main(int argc, char** argv) {
   /// 表现为 1x 不推进、倍速反而正常。
   double sim_time_debt = 0.0;
 
+#ifdef _WIN32
+  bool prev_left_down = false;
+#endif
+
   while (win.is_open() && !win.should_close()) {
     win.poll_events();
+
+    const int cw = win.client_width();
+    const int ch = win.client_height();
 
     bool split_left_driven = false;
     bool split_right_driven = false;
 
-    const int cw = win.client_width();
-    const int ch = win.client_height();
     shell.process_mouse_drag(win, engine, split_left_driven, split_right_driven);
 
     QueryPerformanceCounter(&now);
@@ -281,6 +287,12 @@ int main(int argc, char** argv) {
 
 #ifdef _WIN32
     win.make_current();
+    if (!map_only) {
+      const bool left_down = win.left_button_down();
+      shell.process_entity_pick_mouse(engine, cw, ch, win.mouse_client_x(), win.mouse_client_y(), left_down,
+                                      prev_left_down);
+      prev_left_down = left_down;
+    }
 #endif
     glViewport(0, 0, cw, ch);
     shell.pre_draw_split_sync(engine, cw, ch, split_left_driven, split_right_driven);

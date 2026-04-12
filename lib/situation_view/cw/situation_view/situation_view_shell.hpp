@@ -1,7 +1,10 @@
 #pragma once
 
+#include "cw/engine/types.hpp"
 #include "cw/render/globe_view_3d.hpp"
 #include "cw/render/tactical_map_2d.hpp"
+
+#include <optional>
 
 namespace cw::engine {
 class Engine;
@@ -70,6 +73,13 @@ class SituationViewShell {
   /// 左键拖动平移 / 弧球；分屏时设置 `split_*_driven`（在仿真步进之前调用）。
   void process_mouse_drag(cw::render::GlWindow& win, cw::engine::Engine& engine, bool& split_left_driven,
                           bool& split_right_driven);
+
+  /// 左键点击仿真实体拾取（与拖动区分：位移小于约 8px 视为点击）。须在 `poll_events` 之后调用。
+  void process_entity_pick_mouse(cw::engine::Engine& eng, int client_w, int client_h, int mouse_x,
+                                 int mouse_y, bool left_down, bool left_was_down);
+  [[nodiscard]] std::optional<cw::engine::EntityId> picked_entity_id() const noexcept {
+    return picked_entity_id_;
+  }
   /// 滚轮缩放（在仿真步进之后调用，与原先主循环顺序一致）。
   void process_wheel(cw::render::GlWindow& win, bool& split_left_driven, bool& split_right_driven);
 
@@ -107,6 +117,10 @@ class SituationViewShell {
   bool drag_prev_valid_ = false;
   int drag_prev_mx_ = 0;
   int drag_prev_my_ = 0;
+  int pick_down_mx_ = 0;
+  int pick_down_my_ = 0;
+  bool pick_drag_cancel_ = false;
+  std::optional<cw::engine::EntityId> picked_entity_id_{};
 #ifdef _WIN32
   void* hwnd_main_ = nullptr;
   void* hmenu_view_ = nullptr;
