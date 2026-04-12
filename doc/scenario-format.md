@@ -17,14 +17,16 @@ Clockwork 使用自研文本想定，扩展名建议 `.cws`（Clockwork Scenario
 
 `entity` 行末尾可挂一个或多个模型，token 为：
 
-| Token（不区分大小写） | 含义 |
-|----------------------|------|
-| `mover` | 运动模型 |
-| `sensor` | 传感器模型 |
-| `comdevice` | 通信设备 |
-| `processor` | 处理机 |
-| `weapon` | 武器 |
-| `signature` | 特征/签名（如 RCS） |
+
+| Token（不区分大小写） | 含义           |
+| ------------- | ------------ |
+| `mover`       | 运动模型         |
+| `sensor`      | 传感器模型        |
+| `comdevice`   | 通信设备         |
+| `processor`   | 处理机          |
+| `weapon`      | 武器           |
+| `signature`   | 特征/签名（如 RCS） |
+
 
 每条 `entity` 至少挂载一个模型。
 
@@ -53,29 +55,31 @@ entity_vel <name> <vx> <vy> <vz>
 ```
 
 - `<name>` 在同一想定内唯一，且非空。
-- **`entity_pos` / `entity_vel`** 须在对应 `entity` 之后出现；同一实体多次书写时**后写覆盖先写**（与 `color` 一致）。
+- `**entity_pos` / `entity_vel**` 须在对应 `entity` 之后出现；同一实体多次书写时**后写覆盖先写**（与 `color` 一致）。
 - 纬度超出 Web 墨卡托有效范围时会在解析阶段钳位（约 ±85.05°）。
 
 ### 实体扩展
 
-| 指令 | 语法 | 说明 |
-|------|------|------|
-| 位置 | `entity_pos <name> …` | `geo` / `mercator` / 三数字墨卡托米；见上文 |
-| 速度 | `entity_vel <name> <vx> <vy> <vz>` | m/s；未写则 0 |
-| 外部 id | `entity_id <name> <external_id>` | 想定侧唯一标识 |
-| 阵营 | `faction <name> <faction_token>` | 单 token |
-| 型号 | `variant <name> <variant_ref>` | 单 token |
-| 二维图标 | `icon2d <name> <path>` | 资源路径 |
-| 态势显示色 | `color <name> …` | 见下文；未指定时由 `faction` 推断 |
-| 三维模型 | `model3d <name> <path>` | 资源路径 |
-| 平台属性 | `attr <name> <key> <value...>` | value 为剩余整行 |
-| 挂载参数 | `mparam <name> <model> <key> <value...>` | model 须为该实体已声明的挂载种类；value 为剩余整行 |
-| Lua 脚本 | `script_lua <name> <path> [entry <sym>]` | |
-| 蓝图脚本 | `script_blueprint <name> <path>` | |
 
-同一实体仅保留一个 `script_*`：后写覆盖先写。
+| 指令     | 语法                                       | 说明                               |
+| ------ | ---------------------------------------- | -------------------------------- |
+| 位置     | `entity_pos <name> …`                    | `geo` / `mercator` / 三数字墨卡托米；见上文 |
+| 速度     | `entity_vel <name> <vx> <vy> <vz>`       | m/s；未写则 0                        |
+| 外部 id  | `entity_id <name> <external_id>`         | 想定侧唯一标识                          |
+| 阵营     | `faction <name> <faction_token>`         | 单 token                          |
+| 型号     | `variant <name> <variant_ref>`           | 单 token                          |
+| 二维图标   | `icon2d <name> <path>`                   | 资源路径                             |
+| 态势显示色  | `color <name> …`                         | 见下文；未指定时由 `faction` 推断           |
+| 三维模型   | `model3d <name> <path>`                  | 资源路径                             |
+| 平台属性   | `attr <name> <key> <value...>`           | value 为剩余整行                      |
+| 挂载参数   | `mparam <name> <model> <key> <value...>` | model 须为该实体已声明的挂载种类；value 为剩余整行  |
+| Lua 脚本 | `script_lua <name> <path> [entry <sym>]` |                                  |
+| 蓝图脚本   | `script_blueprint <name> <path>`         |                                  |
 
-**`color`（态势显示用 RGB，与引擎物理无关）** 任选一种写法：
+
+同一实体仅保留一个 `script_`*：后写覆盖先写。
+
+`**color`（态势显示用 RGB，与引擎物理无关）** 任选一种写法：
 
 - `color <name> <r> <g> <b>` — 三个整数 **0～255**（与常见网页/CSS 一致）。
 - `color <name> #RRGGBB` 或 `color <name> #RGB` — 十六进制，如 `#ff8800`、`#f80`。
@@ -132,23 +136,29 @@ comm_link <from_id> <to_id> [loss <0..1>] [delay_ms <ms>]
 
 ### mover
 
-| 键 | 类型 | 说明 |
-|----|------|------|
-| `max_speed_mps` | 浮点 | 最大速度（m/s），默认约 100 |
-| `route` | 字符串 | 航线 id，与 `route` 行的 `<route_id>` 一致；缺省表示不跟航线，仅按初速积分 |
+
+| 键               | 类型  | 说明                                                 |
+| --------------- | --- | -------------------------------------------------- |
+| `max_speed_mps` | 浮点  | 最大速度（m/s），默认约 100                                  |
+| `route`         | 字符串 | 航线 id，与 `route` 行的 `<route_id>` 一致；缺省表示不跟航线，仅按初速积分 |
+
 
 ### sensor
 
-| 键 | 类型 | 说明 |
-|----|------|------|
-| `range_m` | 浮点 | 最大探测距离（m），默认 30000 |
-| `fov_deg` | 浮点 | 视场角（度）；**≥ 359** 视为全向；否则相对速度方向的前向锥，半角为 `fov_deg/2` |
+
+| 键         | 类型  | 说明                                                 |
+| --------- | --- | -------------------------------------------------- |
+| `range_m` | 浮点  | 最大探测距离（m），默认 30000                                 |
+| `fov_deg` | 浮点  | 视场角（度）；**≥ 359** 视为全向；否则相对速度方向的前向锥，半角为 `fov_deg/2` |
+
 
 ### signature
 
-| 键 | 类型 | 说明 |
-|----|------|------|
-| `rcs_m2` | 浮点 | 雷达截面积（m²），默认 10，供 sensor 输出到态势探测列表 |
+
+| 键        | 类型  | 说明                                 |
+| -------- | --- | ---------------------------------- |
+| `rcs_m2` | 浮点  | 雷达截面积（m²），默认 10，供 sensor 输出到态势探测列表 |
+
 
 ## 示例片段
 
@@ -175,11 +185,13 @@ mparam bravo signature rcs_m2 12.5
 
 ## 与代码的对应关系
 
-| 概念 | 类型 / 字段 |
-|------|-------------|
-| 想定根 | `cw::scenario::Scenario` |
-| 实体 | `ScenarioEntityDesc`（`mounts` 为 `ModelMountDesc` 列表） |
-| 挂载参数 | `ModelMountDesc::params`，`pair<string,string>` |
-| 航线 | `ScenarioRoute`（`waypoints`） |
+
+| 概念   | 类型 / 字段                                              |
+| ---- | ---------------------------------------------------- |
+| 想定根  | `cw::scenario::Scenario`                             |
+| 实体   | `ScenarioEntityDesc`（`mounts` 为 `ModelMountDesc` 列表） |
+| 挂载参数 | `ModelMountDesc::params`，`pair<string,string>`       |
+| 航线   | `ScenarioRoute`（`waypoints`）                         |
+
 
 解析入口：`cw::scenario::parse_scenario_file(path, out)`、`parse_scenario_text(text, out)`（声明见 `cw/scenario/parse.hpp`）。

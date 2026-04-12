@@ -258,7 +258,8 @@ void entity_display_rgb(const cw::engine::EntitySituation& e, float& r, float& g
 
 void draw_entities(const cw::engine::Engine& eng, float world_width_m, float world_height_m,
                    int vp_w, int vp_h, float cx_ref, IconTextureCache& icon_cache) {
-  // 实体符号：屏幕像素近似固定（不随地图缩放变化）；速度矢量仍按世界尺度绘制。
+  // 实体符号：屏幕像素近似固定（不随地图缩放变化）。速度矢量用世界尺度 `vscale`，但放大后 vscale 很小，
+  // 矢量在世界米下短于亚像素，故对屏幕长度设下限，与三维（用全球尺度常数）观感一致。
   const float vpwf = static_cast<float>(std::max(1, vp_w));
   const float vphf = static_cast<float>(std::max(1, vp_h));
   const float m_per_px_x = world_width_m / vpwf;
@@ -305,8 +306,9 @@ void draw_entities(const cw::engine::Engine& eng, float world_width_m, float wor
       glPushMatrix();
       glTranslatef(x, y, 0.F);
       if (vm > 0.5F) {
-        const float ang_deg =
-            std::atan2(vy, vx) * 57.2957795F - 90.F;  // 机头朝上纹理 = 航向
+        /// SVG 光栅 + `glTexImage2D` 首行在纹理底边（v=0），机头在纹理「下」侧，贴到四边形后朝世界 −Y；
+        /// 速度矢量 (vx,vy) 在墨卡托 +X/+Y。用 atan2(vy,vx)+90° 使机头与矢量同向（旧 −90° 假定机头朝 +Y，会差 90°）。
+        const float ang_deg = std::atan2(vy, vx) * 57.2957795F + 90.F;
         glRotatef(ang_deg, 0.F, 0.F, 1.F);
       }
       glBegin(GL_QUADS);
@@ -335,9 +337,18 @@ void draw_entities(const cw::engine::Engine& eng, float world_width_m, float wor
       glDisable(GL_TEXTURE_2D);
       glColor3f(0.35F, 0.85F, 0.95F);
       glLineWidth(2.F);
+      float dx = vx * vscale;
+      float dy = vy * vscale;
+      constexpr float kMinSpeedVecPx = 32.F;
+      const float px_len = std::hypot(dx / m_per_px_x, dy / m_per_px_y);
+      if (px_len < kMinSpeedVecPx && px_len > 1e-6f) {
+        const float t = kMinSpeedVecPx / px_len;
+        dx *= t;
+        dy *= t;
+      }
       glBegin(GL_LINES);
       glVertex2f(x, y);
-      glVertex2f(x + vx * vscale, y + vy * vscale);
+      glVertex2f(x + dx, y + dy);
       glEnd();
     }
   }
@@ -416,11 +427,23 @@ void draw_routes_globe(const cw::engine::Engine& eng, float cx_ref) {
   }
 }
 
+/// OpenGL 地球模型半径为 1（海平面）；`alt_m` 为海拔米（与想定 `box`/`ap_vert` 的 z 一致）。
+/// 须略高于 `draw_globe_lonlat_grid` 使用的 `kGlobeGridR`（1.00055），否则空域线会被经纬网盖住；
+/// 亦勿回到 ~1.003，否则海平面空域会「悬空」约 19 km。
+static float globe_radius_for_airspace_alt_m(float alt_m_min) {
+  constexpr float kEarthR_m = 6378137.f;
+  /// 与 `globe_view_3d.cpp` 中 `draw_globe_lonlat_grid` 的球面半径一致。
+  constexpr float kGlobeGridR = 1.00055f;
+  const float r = 1.0f + std::max(0.f, alt_m_min) / kEarthR_m;
+  return std::max(kGlobeGridR + 0.00012f, r + 0.00012f);
+}
+
 void draw_airspaces_globe(const cw::engine::Engine& eng, float cx_ref) {
   glLineWidth(1.F);
-  constexpr float kR = 1.003F;
   for (const auto& a : eng.airspaces()) {
     if (a.kind == cw::scenario::AirspaceKind::Box) {
+      const float alt_floor = std::min(a.box_min.z, a.box_max.z);
+      const float kR = globe_radius_for_airspace_alt_m(alt_floor);
       glColor3f(0.25F, 0.55F, 0.75F);
       glBegin(GL_LINE_LOOP);
       const float xs[] = {cw::render::TacticalMercatorMap::mercator_periodic_x(a.box_min.x, cx_ref),
@@ -440,6 +463,11 @@ void draw_airspaces_globe(const cw::engine::Engine& eng, float cx_ref) {
       }
       glEnd();
     } else if (a.polygon.size() >= 2) {
+      float alt_floor = a.polygon[0].z;
+      for (const auto& p : a.polygon) {
+        alt_floor = std::min(alt_floor, p.z);
+      }
+      const float kR = globe_radius_for_airspace_alt_m(alt_floor);
       glColor3f(0.25F, 0.55F, 0.75F);
       glBegin(GL_LINE_LOOP);
       for (const auto& p : a.polygon) {
@@ -563,7 +591,7 @@ void draw_hud_gl_globe_variant(int vp_w, int vp_h, GLuint font_base, const Situa
                 hud.center_lon_deg >= 0.0 ? 'E' : 'W', ab_lat,
                 hud.center_lat_deg >= 0.0 ? 'N' : 'S');
   std::snprintf(line2, sizeof(line2),
-                "3D globe  dist=%.4f  width~%.0fm scale~1:%.0f  (drag arcball, wheel zoom)",
+                "3D globe  dist=%.4f  EW~%.0fm scale~1:%.0f  (drag arcball, wheel zoom)",
                 hud.globe_camera_distance, hud.globe_ground_width_m, hud.globe_scale_approx);
 
   glDisable(GL_TEXTURE_2D);
@@ -704,14 +732,8 @@ void draw_frame_globe(const cw::engine::Engine& eng, SituationViewShell& shell, 
     hud.globe_camera_distance = static_cast<double>(shell.globe_view().camera().distance);
     hud.has_cursor_lonlat = false;
     {
-      constexpr double kEarthR = 6378137.0;
-      constexpr double kPi = 3.14159265358979323846;
-      constexpr double kFovYDeg = 50.0;
-      const double h_eye =
-          std::max(0.0, static_cast<double>(shell.globe_view().camera().distance) - 1.0);
-      const double tan_half = std::tan(0.5 * kFovYDeg * (kPi / 180.0));
-      hud.globe_ground_width_m = 2.0 * h_eye * tan_half * kEarthR;
-      /// 96 DPI：1 px?25.4/96 mm；比例尺分母 N?实地宽度(mm) / 图上宽度(mm)。
+      /// 与 `GlobeEarthView::visible_ground_ew_meters` 一致：水平视场在球面处的近似东西向宽度。
+      hud.globe_ground_width_m = shell.globe_view().visible_ground_ew_meters(vp_w, vp_h);
       constexpr double kMmPerPx = 25.4 / 96.0;
       const double vw = static_cast<double>(std::max(1, vp_w));
       if (hud.globe_ground_width_m > 1.0 && vw > 0.0) {
@@ -888,10 +910,14 @@ void draw_hud_gl(int vp_w, int vp_h, GLuint font_base, const SituationHud& hud,
   std::snprintf(line1, sizeof(line1), "Center lon %.5f %c,  lat %.5f %c", ab_lon,
                 hud.center_lon_deg >= 0.0 ? 'E' : 'W', ab_lat,
                 hud.center_lat_deg >= 0.0 ? 'N' : 'S');
-  const double view_w_km = hud.meters_per_px * static_cast<double>(std::max(1, vp_w)) / 1000.0;
+  constexpr double kPi = 3.14159265358979323846;
+  const double lat_r = hud.center_lat_deg * (kPi / 180.0);
+  const double cos_lat = std::max(1e-4, std::cos(lat_r));
+  const double m_ew_per_px = hud.meters_per_px * cos_lat;
+  const double view_ew_km = m_ew_per_px * static_cast<double>(std::max(1, vp_w)) / 1000.0;
   std::snprintf(line2, sizeof(line2),
-                "Scale  1 px = %.2f m   View width = %.2f km   Zoom = %.2fx", hud.meters_per_px,
-                view_w_km, static_cast<double>(hud.zoom_factor));
+                "Scale  1 px = %.2f m (EW)   View EW = %.2f km   Zoom = %.2fx", m_ew_per_px,
+                view_ew_km, static_cast<double>(hud.zoom_factor));
 
   glDisable(GL_TEXTURE_2D);
   glDisable(GL_BLEND);

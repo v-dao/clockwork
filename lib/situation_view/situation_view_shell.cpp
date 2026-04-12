@@ -99,9 +99,12 @@ void SituationViewShell::process_mouse_drag(cw::render::GlWindow& win, cw::engin
     if (drag_prev_valid_) {
       const int split_x = std::max(1, cw / 2);
       const int mx = win.mouse_client_x();
-      const bool split_drag_left = (view_mode_ != ViewMode::Split2dGlobe) || (drag_prev_mx_ < split_x);
-      const bool split_drag_right = (view_mode_ == ViewMode::Split2dGlobe) && !split_drag_left;
-      if (view_mode_ == ViewMode::Tactical2D || split_drag_left) {
+      /// 仅分屏时按 x 划分左右；纯 2D / 纯 3D 不得用「非分屏 => 左半屏」否则 Globe3d 会恒走战术平移、弧球永远不触发。
+      const bool split_left =
+          (view_mode_ == ViewMode::Split2dGlobe) && (drag_prev_mx_ < split_x);
+      const bool split_right =
+          (view_mode_ == ViewMode::Split2dGlobe) && (drag_prev_mx_ >= split_x);
+      if (view_mode_ == ViewMode::Tactical2D || split_left) {
         const int dx = mx - drag_prev_mx_;
         const int dy = win.mouse_client_y() - drag_prev_my_;
         const int pan_w = (view_mode_ == ViewMode::Split2dGlobe) ? split_x : cw;
@@ -109,7 +112,7 @@ void SituationViewShell::process_mouse_drag(cw::render::GlWindow& win, cw::engin
         if (view_mode_ == ViewMode::Split2dGlobe && (dx != 0 || dy != 0)) {
           split_left_driven = true;
         }
-      } else if (view_mode_ == ViewMode::Globe3d || split_drag_right) {
+      } else if (view_mode_ == ViewMode::Globe3d || split_right) {
         const int pmx = drag_prev_mx_;
         const int pmy = drag_prev_my_;
         const int cmx = mx;
@@ -219,21 +222,23 @@ void SituationViewShell::pre_draw_split_sync(cw::engine::Engine& engine, int cli
     }
   };
 
+  /// 缩放：战术图东西向地面宽度 `(r-l)*cos(φ)` 与球面透视水平视场宽度对齐。
+  /// 仅在「纯右侧」驱动时由地球反推战术 zoom；其余情况（含无操作帧）均以战术为准更新地球距离，
+  /// 避免想定范围变化或漏同步帧后两侧倍率长期不一致。
+  const bool only_right = split_right_driven && !split_left_driven;
+
   if (split_initial_sync_pending_) {
     globe_.orient_content_to_place_lonlat_at_screen_center(t_lon, t_lat);
     split_initial_sync_pending_ = false;
     sync_scale_left_to_right();
-  } else if (split_left_driven || split_right_driven) {
-    if (split_left_driven && !split_right_driven) {
+  } else if (only_right) {
+    tactical_.set_frustum_center_lonlat(engine, split_x, client_h, g_lon, g_lat);
+    sync_scale_right_to_left();
+  } else {
+    if (split_left_driven || split_right_driven) {
       globe_.orient_content_to_place_lonlat_at_screen_center(t_lon, t_lat);
-      sync_scale_left_to_right();
-    } else if (split_right_driven && !split_left_driven) {
-      tactical_.set_frustum_center_lonlat(engine, split_x, client_h, g_lon, g_lat);
-      sync_scale_right_to_left();
-    } else {
-      globe_.orient_content_to_place_lonlat_at_screen_center(t_lon, t_lat);
-      sync_scale_left_to_right();
     }
+    sync_scale_left_to_right();
   }
 }
 

@@ -5,7 +5,7 @@ version 2
 # entity 仅声明挂载模型；位置/速度用 entity_pos、entity_vel（默认 0）
 entity alpha mover sensor
 entity_pos alpha geo 0 0 1000
-entity_vel alpha 10 0 0
+entity_vel alpha 10 5 0
 entity_id alpha UAV-A001
 faction alpha blue
 # 态势色（0..255）；与 cornflowerblue / #ff6633 等价，兼容未重链的旧 viewer
@@ -25,19 +25,19 @@ faction bravo red
 color bravo 255 102 51
 script_blueprint bravo bp/decoy.json
 
-route patrol1 north_patrol
-route_pt_geo patrol1 0 0 0
-route_pt_geo patrol1 0.0449155 0 0
-route_pt_geo patrol1 0.0449155 0.0449155 0
+#route patrol1 north_patrol
+#route_pt_geo patrol1 0 0 0
+#route_pt_geo patrol1 0.5 0 0
+#route_pt_geo patrol1 0.5 0.5 0
 
-airspace_box_geo cor1 0 0 0 0.089831 0.089831 0
-air_attr cor1 label training_corridor
+# airspace_box_geo cor1 0 0 0 0.08 0.08 0
+# air_attr cor1 label training_corridor
 
-airspace_poly ao_warn
-ap_vert_geo ao_warn 0 0 0
-ap_vert_geo ao_warn 0.008993 0 0
-ap_vert_geo ao_warn 0.0044965 0.0071865 0
-air_attr ao_warn class warning
+# airspace_poly ao_warn
+# ap_vert_geo ao_warn 0 0 0
+# ap_vert_geo ao_warn 0.008993 0 0
+# ap_vert_geo ao_warn 0.0044965 0.0071865 0
+# air_attr ao_warn class warning
 
 comm_node gw1 entity alpha bw 1000000 lat_ms 2.0
 comm_node gw2 entity bravo bw 500000 lat_ms 5.0
