@@ -59,14 +59,17 @@
 | 取消挂起拖动 | 左键松开时清除未消费的弧球状态 | `clear_arcball_pending` |
 | 重置姿态 | `HOME` / 切出 3D 等路径会重置 `content_R` 并清 pending | `reset_content_orientation` / `reset_globe_view_auxiliary_state` |
 | 经纬拾取 | HUD 与光标下球面点；射线取 `dot(p_world,eye)>0` 的交点 | `try_pixel_lonlat` / `try_pixel_unit_world` |
+| 经纬网步长 | 与2D 战术图共用 `pick_lonlat_step_deg`；最细 **0.05°** | `lib/render/lonlat_grid.cpp` |
+| 经纬网绘制 | 局部带状 / 全球封顶、归并顶点、`POLYGON_OFFSET_LINE` | `draw_globe_lonlat_grid`、`globe_patch_diameter_deg` |
 
 ---
 
 ## 4. 相关文件清单
 
 - `lib/render/cw/render/globe_view_3d.hpp` — `GlobeEarthView` 对外 API
-- `lib/render/globe_view_3d.cpp` — 投影、弧球、经纬网
-- `cmd/situation_view/situation_view.cpp` — 主循环：左键拖动入队、滚轮缩放、3D 绘制入口
+- `lib/render/globe_view_3d.cpp` — 投影、弧球、经纬网绘制与 `globe_patch_diameter_deg`
+- `lib/render/lonlat_grid.cpp` / `cw/render/lonlat_grid.hpp` — `pick_lonlat_step_deg`、`visible_sphere_diameter_deg`、注记格式化与 2D 战术经纬网
+- `cmd/situation_view/situation_view.cpp` — 主循环：左键拖动入队、滚轮缩放、3D 绘制入口；`kGlobeGridR` 网格半径
 - `lib/render/globe_program.cpp` — GLSL 地球绘制（读取当前 OpenGL MVP）
 
 ---
@@ -80,8 +83,37 @@
 
 ---
 
-## 6. 修订记录
+## 6. 经纬网与注记（实现摘要）
+
+### 6.1 步长（与 2D 共用）
+
+- `pick_lonlat_step_deg(visible_diameter_deg, camera_distance)`（`lonlat_grid.cpp`）根据理想跨度、`h = d - 1` 及线数上限选出离散步长；候选序列最细为 **0.05°**（依次为0.05、0.1、0.25…），在 `max_mer_lines` / `max_par_lines` 约束下可能再加倍变粗。
+- 3D 侧先用 **`visible_sphere_diameter_deg(camera_distance)`** 作为第一个参数，用于决定「这一缩放级别用多细的 `step`」，与相机距离一致。
+
+### 6.2 绘制哪些经线 / 纬线
+
+- **问题**：贴球时 `visible_sphere_diameter_deg` 可达近 180°，与 HUD 上「地面只有几十公里宽」不符；若仅按整球条数封顶（如 168 条经线），放大后屏幕上往往只剩一两根经线。
+- **`globe_patch_diameter_deg(vp_w, vp_h, camera_distance)`**：与 `situation_view` 中 HUD 地面宽度同一套假设（单位球半径 1、`h_eye = d - 1`、竖直 FOV **50°**、视口纵横比），估算视口中心附近地面张角的 **较大边**（度）。
+- **局部带状模式**：`viewport_center_valid && patch_deg < 92° && n_mer > 1` 时，只在中心经度索引带 `[i_draw_lo…i_draw_hi]` 与中心纬度索引带 `[k_draw_lo…k_draw_hi]` 内画线；带内 `mer_stride` / `par_stride` 由带宽、约 **patch/step/9** 的目标密度、以及经线 **160** / 纬线 **120** 的条数预算共同约束（取预算步长与密度步长的较小者）。
+- **全球模式**：不满足上式时，经线约 **168** 条、纬线约 **84** 条封顶（整球均匀步进）。
+
+### 6.3 折线质量与性能
+
+- 每条经线 / 纬线为一条连续 **`GL_LINE_STRIP`**；背向半球依赖深度缓冲相对球面几何隐藏弦段，不按顶点切段。
+- **T 型接缝**：均匀弧长上的纬度（或经度）与「当前实际绘制的纬线纬度 / 经线经度」做 **双指针归并**，交点处共顶点；每帧预计算 `par_lats_for_meridian_merge` 与 `mer_lons_draw`，**不对每条线做全表排序**。
+- **`GL_POLYGON_OFFSET_LINE`** + `glPolygonOffset(0, -3)` 减轻线与球面及线–线交点的深度抖动。
+- 网格画在略大于单位球的半径上：`situation_view.cpp` 中 **`kGlobeGridR = 1.00055`**（海岸线等略低）。
+
+### 6.4 注记
+
+- 相机较近（`camera_distance < 4.6`）且视口中心有效时：**十字注记**——过视口中心经线侧重纬度、过中心纬线侧重经度，中心格点合并为「纬 经」；实现见 `draw_globe_lonlat_grid` 与 HUD 光栅字绘制。
+- `fmt_lon` / `fmt_lat`：当 `step_deg < 0.1°` 时经纬标签为 **两位小数**（0.05° 步长走此分支）。
+
+---
+
+## 7. 修订记录
 
 - 文档初稿：归纳「北朝上 + 左键拖动粘点」需求与实现。
 - **北向修正**：近似的 swing–twist 不足以对齐屏幕；改为最短弧 + **`north_roll_align_content_R`**（与 `gluLookAt` 相机上对齐）。
 - **弧球与拾取**：弧球增量须 **右乘** `content_R * Rd`；`u0,u1` 为模型系。射线–球面交点用 `content_R` 将命中点变到世界系后再与 `eye` 判半球；文档与实现对齐。
+- **经纬网**：补充 `pick_lonlat_step_deg` 最细 **0.05°**、`globe_patch_diameter_deg` 局部带状绘制、归并与线偏移；相关文件列入 §4。

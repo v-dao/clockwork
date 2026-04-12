@@ -160,3 +160,4 @@
 - [architecture.md](architecture.md)
 - [api.md](api.md)
 - [development.md](development.md)
+- [globe-3d-view.md](globe-3d-view.md) — `situation_view` 三维地球：北向、弧球、经纬网步长与绘制策略（与 `lib/render` 代码同步）
