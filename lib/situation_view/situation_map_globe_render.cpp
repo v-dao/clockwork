@@ -479,11 +479,21 @@ void draw_globe_sphere(unsigned tex_gl) {
   glColor4f(1.F, 1.F, 1.F, 1.F);
 }
 
+/// OpenGL 地球模型半径为 1（海平面）；`alt_m` 为海拔米（与想定 `box`/`ap_vert` 的 z 一致）。
+/// 须略高于 `draw_globe_lonlat_grid` 使用的 `kGlobeGridR`（1.00055），否则空域线会被经纬网盖住；
+/// 亦勿回到 ~1.003，否则海平面空域会「悬空」约 19 km。
+static float globe_radius_for_airspace_alt_m(float alt_m_min) {
+  constexpr float kEarthR_m = 6378137.f;
+  /// 与 `globe_view_3d.cpp` 中 `draw_globe_lonlat_grid` 的球面半径一致。
+  constexpr float kGlobeGridR = 1.00055f;
+  const float r = 1.0f + std::max(0.f, alt_m_min) / kEarthR_m;
+  return std::max(kGlobeGridR + 0.00012f, r + 0.00012f);
+}
+
 void draw_routes_globe(const cw::engine::Engine& eng, float cx_ref, int vp_w, int vp_h,
                        std::vector<cw::render::GlobeLonLatLabel>* labels_out, float camera_distance) {
   glDisable(GL_TEXTURE_2D);
   const float W = cw::render::TacticalMercatorMap::kWorldWidthM;
-  constexpr float kR = 1.002F;
   const float ref_d = 3.2F;
   float pixel_scale = ref_d / std::max(1.001F, camera_distance);
   pixel_scale *= std::sqrt(static_cast<float>(std::max(360, vp_h)) / 720.F);
@@ -515,6 +525,7 @@ void draw_routes_globe(const cw::engine::Engine& eng, float cx_ref, int vp_w, in
       float gy = 0.F;
       float gz = 0.F;
       lonlat_deg_to_unit_sphere(lon, lat, gx, gy, gz);
+      const float kR = globe_radius_for_airspace_alt_m(r.waypoints[i].z);
       glVertex3f(gx * kR, gy * kR, gz * kR);
     }
     glEnd();
@@ -537,7 +548,8 @@ void draw_routes_globe(const cw::engine::Engine& eng, float cx_ref, int vp_w, in
       float gy = 0.F;
       float gz = 0.F;
       lonlat_deg_to_unit_sphere(lon, lat, gx, gy, gz);
-      glVertex3f(gx * kR, gy * kR, gz * kR);
+      const float kRp = globe_radius_for_airspace_alt_m(r.waypoints[i].z);
+      glVertex3f(gx * kRp, gy * kRp, gz * kRp);
     }
     glEnd();
     glPointSize(1.F);
@@ -559,25 +571,15 @@ void draw_routes_globe(const cw::engine::Engine& eng, float cx_ref, int vp_w, in
         float gy = 0.F;
         float gz = 0.F;
         lonlat_deg_to_unit_sphere(lon, lat, gx, gy, gz);
+        const float kRl = globe_radius_for_airspace_alt_m(r.waypoints[i].z);
         char buf[16];
         std::snprintf(buf, sizeof(buf), "%u", static_cast<unsigned>(i));
         cw::render::append_lonlat_grid_label(labels_out, vp_w, vp_h, pixel_scale,
-                                             static_cast<double>(gx * kR), static_cast<double>(gy * kR),
-                                             static_cast<double>(gz * kR), 5.F, 5.F, buf);
+                                             static_cast<double>(gx * kRl), static_cast<double>(gy * kRl),
+                                             static_cast<double>(gz * kRl), 5.F, 5.F, buf);
       }
     }
   }
-}
-
-/// OpenGL 地球模型半径为 1（海平面）；`alt_m` 为海拔米（与想定 `box`/`ap_vert` 的 z 一致）。
-/// 须略高于 `draw_globe_lonlat_grid` 使用的 `kGlobeGridR`（1.00055），否则空域线会被经纬网盖住；
-/// 亦勿回到 ~1.003，否则海平面空域会「悬空」约 19 km。
-static float globe_radius_for_airspace_alt_m(float alt_m_min) {
-  constexpr float kEarthR_m = 6378137.f;
-  /// 与 `globe_view_3d.cpp` 中 `draw_globe_lonlat_grid` 的球面半径一致。
-  constexpr float kGlobeGridR = 1.00055f;
-  const float r = 1.0f + std::max(0.f, alt_m_min) / kEarthR_m;
-  return std::max(kGlobeGridR + 0.00012f, r + 0.00012f);
 }
 
 void draw_airspaces_globe(const cw::engine::Engine& eng, float cx_ref) {
@@ -670,7 +672,6 @@ void draw_detections_globe(const cw::engine::Engine& eng,
 void draw_entities_globe(const cw::engine::Engine& eng, float cx_ref,
                          const cw::render::GlobeEarthView& globe, int vp_w, int vp_h) {
   glDisable(GL_TEXTURE_2D);
-  constexpr float kR = 1.006F;
   const float vpwf = static_cast<float>(std::max(1, vp_w));
   const float vphf = static_cast<float>(std::max(1, vp_h));
   const double ew_d = globe.visible_ground_ew_meters(vp_w, vp_h);
@@ -697,6 +698,7 @@ void draw_entities_globe(const cw::engine::Engine& eng, float cx_ref,
     float y = 0.F;
     float z = 0.F;
     lonlat_deg_to_unit_sphere(lon, lat, x, y, z);
+    const float kR = globe_radius_for_airspace_alt_m(e.position.z);
     glPointSize(9.F);
     glColor4f(cr, cg, cb, 1.F);
     glBegin(GL_POINTS);
