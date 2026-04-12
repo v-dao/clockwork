@@ -39,7 +39,12 @@ struct ScenarioEntityDesc {
   float display_color_b = 1.F;
   std::vector<std::pair<std::string, std::string>> platform_attributes;
   cw::math::Vec3 position{};
+  /// 机体坐标系速度 (m/s)：x 机头、y 右、z 下；见 `lib/ecs` 与 `entity_att`。
   cw::math::Vec3 velocity{};
+  /// 度；偏航从北顺时针、俯仰抬头正、滚转右翼下偏正。未写则 0。
+  float yaw_deg = 0.F;
+  float pitch_deg = 0.F;
+  float roll_deg = 0.F;
   std::vector<ModelMountDesc> mounts;
   std::optional<ScriptBindingDesc> script;
 };

@@ -37,6 +37,9 @@ public:
 
   void reset_camera() noexcept;
   void apply_wheel_zoom(int wheel_delta) noexcept;
+  /// 为真时 `expand_bounds_from_engine` 把仿真实体（及速度提示点）纳入外包盒；默认假（仅航线/空域等静态层）。
+  void set_auto_bounds_include_entities(bool enabled) noexcept { auto_bounds_include_entities_ = enabled; }
+  [[nodiscard]] bool auto_bounds_include_entities() const noexcept { return auto_bounds_include_entities_; }
   void expand_bounds_from_engine(const cw::engine::Engine& eng, MercatorBounds& b) const;
 
   void compute_ortho_frustum(const MercatorBounds& b, int vp_w, int vp_h, MercatorOrthoFrustum& f) const;
@@ -59,6 +62,9 @@ public:
   float zoom() const noexcept { return cam_.zoom; }
   float pan_mx() const noexcept { return cam_.pan_mx; }
   float pan_my() const noexcept { return cam_.pan_my; }
+
+ private:
+  bool auto_bounds_include_entities_ = false;
 };
 
 }  // namespace cw::render

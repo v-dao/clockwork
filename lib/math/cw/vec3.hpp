@@ -24,4 +24,8 @@ struct Vec3 {
 [[nodiscard]] float dot(Vec3 a, Vec3 b) noexcept;
 [[nodiscard]] float length(Vec3 a) noexcept;
 
+[[nodiscard]] Vec3 scale(Vec3 a, float s) noexcept;
+/// 单位向量；长度小于 `epsilon` 时返回 `(1,0,0)`。
+[[nodiscard]] Vec3 normalize(Vec3 a, float epsilon = 1e-6F) noexcept;
+
 }  // namespace cw::math

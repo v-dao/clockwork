@@ -26,23 +26,23 @@ namespace cw::scenario {
     ap_vert_geo <id> <lon°> <lat°> <alt_m>
     airspace_box_geo <id> <min_lon> <min_lat> <min_alt> <max_lon> <max_lat> <max_alt>
 
-  实体扩展（name 须已存在；后写覆盖先写，与 color 相同）：
+  实体扩展（name 须已存在；后写覆盖先写，与 entity_color 相同）：
     entity_pos <name> geo <lon°> <lat°> <alt_m>
     entity_pos <name> mercator|m|meters <mx> <my> <mz>
     entity_pos <name> <mx> <my> <mz>              # 墨卡托米 + 海拔米
-    entity_vel <name> <vx> <vy> <vz>              # 世界系速度 m/s（默认 0）
+    entity_vel <name> <vx> <vy> <vz>              # 机体系速度 m/s（默认 0）；见 entity_att
+    entity_att <name> <yaw_deg> <pitch_deg> <roll_deg>  # 度；未写则 0
     entity_id <name> <external_id>
-    faction <name> <faction_token>
-    variant <name> <variant_ref>
-    icon2d <name> <path>
-    color <name> <r> <g> <b>              # 0..255，态势显示实体色
-    color <name> <#RRGGBB|#RGB>           # 十六进制，如 #ff8800 或 #f80
-    color <name> <color_name>             # 英文名或中文名，如 orange、skyblue、橙
-    model3d <name> <path>
-    attr <name> <key> <value...>        # value 为剩余整行
-    mparam <name> <model> <key> <value...>
-    script_lua <name> <path> [entry <sym>]
-    script_blueprint <name> <path>
+    entity_faction <name> <faction_token>
+    entity_variant <name> <variant_ref>
+    entity_icon2d <name> <path>
+    entity_color <name> <r> <g> <b>              # 0..255，态势显示实体色
+    entity_color <name> <#RRGGBB|#RGB>           # 十六进制，如 #ff8800 或 #f80
+    entity_color <name> <color_name>             # 英文名或中文名，如 orange、skyblue、橙
+    entity_model3d <name> <path>
+    entity_attr <name> <key> <value...>        # value 为剩余整行
+    entity_mparam <name> <model> <key> <value...>
+    entity_script <name> <kind> <path> [entry <sym>]   # kind: lua | blueprint | bp
 
   航线：
     route <route_id> <display_name_one_token>
@@ -466,7 +466,7 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
       if (ent.name.empty()) {
         return Error::ParseError;
       }
-      /// position / velocity 默认 0；由 entity_pos、entity_vel 设置。
+      /// position 默认 0；velocity 为机体系，由 entity_att 转世界系；由 entity_pos、entity_vel、entity_att 设置。
       for (std::size_t i = 2; i < tok.size(); ++i) {
         ModelMountDesc md;
         const Error me = model_from_token(tok[i], md.kind);
@@ -547,6 +547,25 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
       e->velocity = {static_cast<float>(vx), static_cast<float>(vy), static_cast<float>(vz)};
       continue;
     }
+    if (ieq(cmd, "entity_att")) {
+      if (tok.size() < 5) {
+        return Error::ParseError;
+      }
+      ScenarioEntityDesc* ent = find_entity(out, tok[1]);
+      if (!ent) {
+        return Error::ParseError;
+      }
+      double y = 0;
+      double p = 0;
+      double r = 0;
+      if (!parse_double(tok[2], y) || !parse_double(tok[3], p) || !parse_double(tok[4], r)) {
+        return Error::ParseError;
+      }
+      ent->yaw_deg = static_cast<float>(y);
+      ent->pitch_deg = static_cast<float>(p);
+      ent->roll_deg = static_cast<float>(r);
+      continue;
+    }
 
     if (ieq(cmd, "entity_id")) {
       if (tok.size() < 3) {
@@ -559,7 +578,7 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
       e->external_id = tok[2];
       continue;
     }
-    if (ieq(cmd, "faction")) {
+    if (ieq(cmd, "entity_faction")) {
       if (tok.size() < 3) {
         return Error::ParseError;
       }
@@ -570,7 +589,7 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
       e->faction = tok[2];
       continue;
     }
-    if (ieq(cmd, "variant")) {
+    if (ieq(cmd, "entity_variant")) {
       if (tok.size() < 3) {
         return Error::ParseError;
       }
@@ -581,7 +600,7 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
       e->variant_ref = tok[2];
       continue;
     }
-    if (ieq(cmd, "icon2d")) {
+    if (ieq(cmd, "entity_icon2d")) {
       if (tok.size() < 3) {
         return Error::ParseError;
       }
@@ -592,7 +611,7 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
       e->icon_2d_path = tok[2];
       continue;
     }
-    if (ieq(cmd, "color")) {
+    if (ieq(cmd, "entity_color")) {
       if (tok.size() < 3) {
         return Error::ParseError;
       }
@@ -627,7 +646,7 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
       }
       continue;
     }
-    if (ieq(cmd, "model3d")) {
+    if (ieq(cmd, "entity_model3d")) {
       if (tok.size() < 3) {
         return Error::ParseError;
       }
@@ -638,7 +657,7 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
       e->model_3d_path = tok[2];
       continue;
     }
-    if (ieq(cmd, "attr")) {
+    if (ieq(cmd, "entity_attr")) {
       if (tok.size() < 4) {
         return Error::ParseError;
       }
@@ -649,7 +668,7 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
       e->platform_attributes.push_back({tok[2], join_tokens(tok, 3)});
       continue;
     }
-    if (ieq(cmd, "mparam")) {
+    if (ieq(cmd, "entity_mparam")) {
       if (tok.size() < 5) {
         return Error::ParseError;
       }
@@ -674,35 +693,30 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
       mount->params.push_back({tok[3], join_tokens(tok, 4)});
       continue;
     }
-    if (ieq(cmd, "script_lua")) {
-      if (tok.size() < 3) {
+    if (ieq(cmd, "entity_script")) {
+      if (tok.size() < 4) {
         return Error::ParseError;
       }
       ScenarioEntityDesc* e = find_entity(out, tok[1]);
       if (!e) {
         return Error::ParseError;
       }
+      const std::string& kind_tok = tok[2];
       ScriptBindingDesc sb;
-      sb.kind = ScriptBindingDesc::Kind::Lua;
-      sb.resource_path = tok[2];
-      if (tok.size() >= 5 && ieq(tok[3], "entry")) {
-        sb.entry_symbol = tok[4];
-      }
-      e->script = sb;
-      continue;
-    }
-    if (ieq(cmd, "script_blueprint")) {
-      if (tok.size() < 3) {
+      if (ieq(kind_tok, "lua") || ieq(kind_tok, "lua_script")) {
+        sb.kind = ScriptBindingDesc::Kind::Lua;
+      } else if (ieq(kind_tok, "blueprint") || ieq(kind_tok, "bp")) {
+        sb.kind = ScriptBindingDesc::Kind::Blueprint;
+      } else {
         return Error::ParseError;
       }
-      ScenarioEntityDesc* e = find_entity(out, tok[1]);
-      if (!e) {
-        return Error::ParseError;
+      sb.resource_path = tok[3];
+      if (sb.kind == ScriptBindingDesc::Kind::Lua) {
+        if (tok.size() >= 6 && ieq(tok[4], "entry")) {
+          sb.entry_symbol = tok[5];
+        }
       }
-      ScriptBindingDesc sb;
-      sb.kind = ScriptBindingDesc::Kind::Blueprint;
-      sb.resource_path = tok[2];
-      e->script = sb;
+      e->script = std::move(sb);
       continue;
     }
 

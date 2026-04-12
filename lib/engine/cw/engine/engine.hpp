@@ -37,6 +37,9 @@ class Engine {
 
   [[nodiscard]] Error apply_scenario(const cw::scenario::Scenario& sc);
 
+  /// 结束当前运行 → 清空 → 重新装载想定 → `start()`；`sim_time` 归零，倍速与固定步长不变。
+  [[nodiscard]] Error reset_with_scenario(const cw::scenario::Scenario& sc);
+
   [[nodiscard]] Error add_entity(std::string name, std::vector<ModelKind> models = {});
 
   [[nodiscard]] std::size_t entity_count() const noexcept { return entities_.size(); }
@@ -78,11 +81,16 @@ class Engine {
     cw::math::Vec3 position{};
     cw::math::Vec3 velocity{};
     cw::math::Vec3 angular_velocity{};
+    float yaw_deg = 0.F;
+    float pitch_deg = 0.F;
+    float roll_deg = 0.F;
     /// 来自 signature 挂载参数 `rcs_m2`，供 sensor MVP。
     float radar_rcs_m2 = 10.F;
     /// mover 参数 `route=<route_id>`，空表示不跟航线。
     std::string mover_route_id;
     std::size_t mover_wp_index = 0;
+    /// `entity_mparam mover kind`（或 `pattern`），如 `3dof`、`stub`；默认三自由度。
+    std::string mover_kind;
   };
 
   static bool has_model(const EntityRecord& e, ModelKind k);

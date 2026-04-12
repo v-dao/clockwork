@@ -37,13 +37,15 @@ void TacticalMercatorMap::apply_wheel_zoom(int wheel_delta) noexcept {
 
 void TacticalMercatorMap::expand_bounds_from_engine(const cw::engine::Engine& eng, MercatorBounds& b) const {
   const auto& snap = eng.situation();
-  for (const auto& e : snap.entities) {
-    b.add_xy(e.position.x, e.position.y);
-    const float vx = e.velocity.x;
-    const float vy = e.velocity.y;
-    const float vm = std::sqrt(vx * vx + vy * vy);
-    if (vm > 1e-3F) {
-      b.add_xy(e.position.x + vx * 2.F, e.position.y + vy * 2.F);
+  if (auto_bounds_include_entities_) {
+    for (const auto& e : snap.entities) {
+      b.add_xy(e.position.x, e.position.y);
+      const float vx = e.velocity.x;
+      const float vy = e.velocity.y;
+      const float vm = std::sqrt(vx * vx + vy * vy);
+      if (vm > 1e-3F) {
+        b.add_xy(e.position.x + vx * 2.F, e.position.y + vy * 2.F);
+      }
     }
   }
   for (const auto& r : eng.routes()) {

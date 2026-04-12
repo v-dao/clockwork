@@ -1,5 +1,9 @@
 #include "cw/engine/engine.hpp"
 
+#include "cw/ecs/entity_coordinate_system.hpp"
+#include "cw/motion/motion_model.hpp"
+#include "cw/vec3.hpp"
+
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -52,44 +56,22 @@ float param_float(const cw::scenario::ModelMountDesc& m, const char* key, float 
   return static_cast<float>(v);
 }
 
-cw::math::Vec3 v3_mul(cw::math::Vec3 a, float s) { return {a.x * s, a.y * s, a.z * s}; }
-
-cw::math::Vec3 v3_normalize(cw::math::Vec3 a) {
-  const float L = cw::math::length(a);
-  if (L < 1e-6F) {
-    return {1.F, 0.F, 0.F};
-  }
-  return v3_mul(a, 1.F / L);
-}
-
-const cw::scenario::ScenarioRoute* find_route(const std::vector<cw::scenario::ScenarioRoute>& routes,
-                                              const std::string& id) {
-  for (const auto& r : routes) {
-    if (r.id == id) {
-      return &r;
-    }
-  }
-  return nullptr;
-}
-
-cw::math::Vec3 forward_from_velocity(cw::math::Vec3 vel) {
-  if (cw::math::length(vel) < 1e-3F) {
-    return {1.F, 0.F, 0.F};
-  }
-  return v3_normalize(vel);
-}
-
-bool in_sensor_fov(cw::math::Vec3 pos_obs, cw::math::Vec3 vel_obs, cw::math::Vec3 pos_tgt, float fov_deg) {
+bool in_sensor_fov(cw::math::Vec3 pos_obs, cw::math::Vec3 forward_obs, cw::math::Vec3 pos_tgt, float fov_deg) {
   if (fov_deg >= 359.F) {
     return true;
   }
-  const cw::math::Vec3 forward = forward_from_velocity(vel_obs);
+  cw::math::Vec3 forward = forward_obs;
+  if (cw::math::length(forward) < 1e-3F) {
+    forward = {1.F, 0.F, 0.F};
+  } else {
+    forward = cw::math::normalize(forward);
+  }
   cw::math::Vec3 to = pos_tgt - pos_obs;
   const float dist = cw::math::length(to);
   if (dist < 1e-3F) {
     return true;
   }
-  to = v3_mul(to, 1.F / dist);
+  to = cw::math::scale(to, 1.F / dist);
   const float c = std::clamp(cw::math::dot(forward, to), -1.F, 1.F);
   const float ang_deg = std::acos(c) * 180.F / 3.14159265F;
   return ang_deg <= fov_deg * 0.5F;
@@ -124,6 +106,11 @@ void Engine::init_entity_runtime_fields(EntityRecord& rec) {
   }
   if (const auto* mv = Engine::find_mount(rec, ModelKind::Mover)) {
     rec.mover_route_id = param_str(*mv, "route");
+    std::string mk = param_str(*mv, "kind");
+    if (mk.empty()) {
+      mk = param_str(*mv, "pattern");
+    }
+    rec.mover_kind = mk.empty() ? std::string("3dof") : std::move(mk);
   }
 }
 
@@ -261,7 +248,11 @@ Error Engine::apply_scenario(const cw::scenario::Scenario& sc) {
     rec.display_color_b = e.display_color_b;
     rec.platform_attributes = e.platform_attributes;
     rec.position = e.position;
-    rec.velocity = e.velocity;
+    rec.yaw_deg = e.yaw_deg;
+    rec.pitch_deg = e.pitch_deg;
+    rec.roll_deg = e.roll_deg;
+    rec.velocity = cw::ecs::EntityCoordinateSystem::body_velocity_to_world_mercator(
+        e.velocity, e.yaw_deg, e.pitch_deg, e.roll_deg);
     rec.angular_velocity = {};
     rec.mounts = e.mounts;
     rec.script = e.script;
@@ -270,6 +261,22 @@ Error Engine::apply_scenario(const cw::scenario::Scenario& sc) {
   }
   aggregate_situation();
   return Error::Ok;
+}
+
+Error Engine::reset_with_scenario(const cw::scenario::Scenario& sc) {
+  Error e = end();
+  if (!cw::ok(e)) {
+    return e;
+  }
+  e = initialize();
+  if (!cw::ok(e)) {
+    return e;
+  }
+  e = apply_scenario(sc);
+  if (!cw::ok(e)) {
+    return e;
+  }
+  return start();
 }
 
 Error Engine::add_entity(std::string name, std::vector<ModelKind> models) {
@@ -299,26 +306,36 @@ void Engine::run_mover_step(float dt) {
     }
     const cw::scenario::ModelMountDesc* mv = Engine::find_mount(e, ModelKind::Mover);
     const float speed_cap = mv ? param_float(*mv, "max_speed_mps", 100.F) : 100.F;
+    const bool track_yaw =
+        !mv || param_str(*mv, "track_yaw").empty() || param_str(*mv, "track_yaw") != "0";
+    const bool track_pitch = mv && param_str(*mv, "track_pitch") == "1";
 
-    if (!e.mover_route_id.empty()) {
-      const cw::scenario::ScenarioRoute* rt = find_route(routes_, e.mover_route_id);
-      if (rt && !rt->waypoints.empty()) {
-        while (e.mover_wp_index < rt->waypoints.size()) {
-          const auto& wp = rt->waypoints[e.mover_wp_index];
-          const cw::math::Vec3 target{wp.x, wp.y, wp.z};
-          const cw::math::Vec3 delta = target - e.position;
-          const float dist = cw::math::length(delta);
-          if (dist <= kWaypointArriveM) {
-            ++e.mover_wp_index;
-            continue;
-          }
-          e.velocity = v3_mul(v3_normalize(delta), speed_cap);
-          break;
-        }
-      }
-    }
+    cw::motion::MoverRuntimeState st{};
+    st.position = e.position;
+    st.velocity = e.velocity;
+    st.yaw_deg = e.yaw_deg;
+    st.pitch_deg = e.pitch_deg;
+    st.roll_deg = e.roll_deg;
+    st.route_id = e.mover_route_id;
+    st.route_wp_index = e.mover_wp_index;
 
-    e.position = e.position + v3_mul(e.velocity, dt);
+    cw::motion::MoverStepInput in{};
+    in.dt = dt;
+    in.speed_cap_mps = speed_cap;
+    in.waypoint_arrive_m = kWaypointArriveM;
+    in.routes = &routes_;
+    in.track_yaw_from_velocity = track_yaw;
+    in.track_pitch_from_velocity = track_pitch;
+
+    const cw::motion::MotionModel& model = cw::motion::motion_model_for_kind(e.mover_kind);
+    model.apply_dynamics(st, in);
+
+    e.velocity = st.velocity;
+    e.yaw_deg = st.yaw_deg;
+    e.pitch_deg = st.pitch_deg;
+    e.roll_deg = st.roll_deg;
+    e.mover_wp_index = st.route_wp_index;
+    e.position = e.position + cw::math::scale(e.velocity, dt);
   }
 }
 
@@ -360,7 +377,9 @@ void Engine::compute_sensor_detections() {
       if (dist > range_m || !std::isfinite(dist)) {
         continue;
       }
-      if (!in_sensor_fov(obs.position, obs.velocity, tgt.position, fov_deg)) {
+      const cw::math::Vec3 fwd = cw::ecs::EntityCoordinateSystem::body_forward_world_mercator(
+          obs.yaw_deg, obs.pitch_deg, obs.roll_deg);
+      if (!in_sensor_fov(obs.position, fwd, tgt.position, fov_deg)) {
         continue;
       }
       SensorDetection det;
@@ -395,6 +414,9 @@ void Engine::aggregate_situation() {
     s.position = e.position;
     s.velocity = e.velocity;
     s.angular_velocity = e.angular_velocity;
+    s.yaw_deg = e.yaw_deg;
+    s.pitch_deg = e.pitch_deg;
+    s.roll_deg = e.roll_deg;
     snapshot_.entities.push_back(std::move(s));
   }
   compute_sensor_detections();

@@ -32,6 +32,10 @@ struct EntitySituation {
   cw::math::Vec3 position{};
   cw::math::Vec3 velocity{};
   cw::math::Vec3 angular_velocity{};
+  /// 与想定 `entity_att` 一致（度）；供显示与传感器轴向。
+  float yaw_deg = 0.F;
+  float pitch_deg = 0.F;
+  float roll_deg = 0.F;
 };
 
 /// 单帧态势快照。

@@ -35,6 +35,18 @@ constexpr unsigned kMenuView2d = 0xE100;
 constexpr unsigned kMenuView3d = 0xE101;
 constexpr unsigned kMenuViewSplit2d3d = 0xE103;
 constexpr unsigned kMenuGlobeLighting = 0xE102;
+constexpr unsigned kMenuSplitScaleSync = 0xE104;
+constexpr unsigned kMenuTacticalAutoBounds = 0xE105;
+
+constexpr unsigned kMenuSimPause = 0xE200;
+constexpr unsigned kMenuSimResume = 0xE201;
+constexpr unsigned kMenuSimEnd = 0xE202;
+constexpr unsigned kMenuSimReset = 0xE203;
+constexpr unsigned kMenuSimSpeed025 = 0xE210;
+constexpr unsigned kMenuSimSpeed05 = 0xE211;
+constexpr unsigned kMenuSimSpeed1 = 0xE212;
+constexpr unsigned kMenuSimSpeed2 = 0xE213;
+constexpr unsigned kMenuSimSpeed4 = 0xE214;
 
 }  // namespace
 
@@ -68,6 +80,47 @@ void SituationViewShell::on_win32_menu_command(unsigned cmd) {
       CheckMenuItem(hview, static_cast<UINT>(kMenuGlobeLighting),
                     MF_BYCOMMAND | (globe_.lighting_enabled() ? MF_CHECKED : MF_UNCHECKED));
     }
+  } else if (cmd == kMenuSplitScaleSync) {
+    split_scale_sync_enabled_ = !split_scale_sync_enabled_;
+    if (hview != nullptr) {
+      CheckMenuItem(hview, static_cast<UINT>(kMenuSplitScaleSync),
+                    MF_BYCOMMAND | (split_scale_sync_enabled_ ? MF_CHECKED : MF_UNCHECKED));
+    }
+  } else if (cmd == kMenuTacticalAutoBounds) {
+    const bool v = !tactical_.auto_bounds_include_entities();
+    tactical_.set_auto_bounds_include_entities(v);
+    if (hview != nullptr) {
+      CheckMenuItem(hview, static_cast<UINT>(kMenuTacticalAutoBounds),
+                    MF_BYCOMMAND | (v ? MF_CHECKED : MF_UNCHECKED));
+    }
+  } else if (cmd == kMenuSimPause) {
+    if (engine_sim_menu_ != nullptr) {
+      static_cast<void>(engine_sim_menu_->pause());
+    }
+  } else if (cmd == kMenuSimResume) {
+    if (engine_sim_menu_ != nullptr) {
+      static_cast<void>(engine_sim_menu_->start());
+    }
+  } else if (cmd == kMenuSimEnd) {
+    if (engine_sim_menu_ != nullptr) {
+      static_cast<void>(engine_sim_menu_->end());
+    }
+  } else if (cmd == kMenuSimReset) {
+    if (engine_sim_menu_ != nullptr && scenario_for_reset_ != nullptr) {
+      static_cast<void>(engine_sim_menu_->reset_with_scenario(*scenario_for_reset_));
+    }
+  } else if (cmd >= kMenuSimSpeed025 && cmd <= kMenuSimSpeed4) {
+    if (engine_sim_menu_ != nullptr) {
+      static constexpr double kScales[] = {0.25, 0.5, 1.0, 2.0, 4.0};
+      const unsigned idx = cmd - kMenuSimSpeed025;
+      if (idx < sizeof(kScales) / sizeof(kScales[0])) {
+        static_cast<void>(engine_sim_menu_->set_time_scale(kScales[idx]));
+      }
+      HMENU hsim = static_cast<HMENU>(hmenu_sim_);
+      if (hsim != nullptr) {
+        CheckMenuRadioItem(hsim, kMenuSimSpeed025, kMenuSimSpeed4, static_cast<UINT>(cmd), MF_BYCOMMAND);
+      }
+    }
   }
 }
 
@@ -81,13 +134,59 @@ void SituationViewShell::install_win32_view_menu(cw::render::GlWindow& win) {
   AppendMenuW(h_view, MF_STRING, static_cast<UINT_PTR>(kMenuViewSplit2d3d), L"2D + 3D split view");
   AppendMenuW(h_view, MF_SEPARATOR, 0, nullptr);
   AppendMenuW(h_view, MF_STRING, static_cast<UINT_PTR>(kMenuGlobeLighting), L"三维地图光照");
+  AppendMenuW(h_view, MF_STRING | MF_CHECKED, static_cast<UINT_PTR>(kMenuSplitScaleSync),
+              L"分屏左右比例尺同步");
+  AppendMenuW(h_view, MF_STRING, static_cast<UINT_PTR>(kMenuTacticalAutoBounds),
+              L"战术自动框选实体");
   AppendMenuW(h_bar, MF_POPUP, reinterpret_cast<UINT_PTR>(h_view), L"View");
   SetMenu(static_cast<HWND>(hwnd_main_), h_bar);
   DrawMenuBar(static_cast<HWND>(hwnd_main_));
   win.set_menu_command_callback(&SituationViewShell::win32_menu_thunk, this);
 }
+
+void SituationViewShell::install_win32_simulation_menu(cw::render::GlWindow& win) {
+  hwnd_main_ = win.win32_hwnd();
+  HMENU h_bar = GetMenu(static_cast<HWND>(hwnd_main_));
+  if (h_bar == nullptr) {
+    return;
+  }
+  HMENU h_sim = CreateMenu();
+  hmenu_sim_ = h_sim;
+  AppendMenuW(h_sim, MF_STRING, static_cast<UINT_PTR>(kMenuSimPause), L"Pause");
+  AppendMenuW(h_sim, MF_STRING, static_cast<UINT_PTR>(kMenuSimResume), L"Resume");
+  AppendMenuW(h_sim, MF_STRING, static_cast<UINT_PTR>(kMenuSimEnd), L"End simulation");
+  AppendMenuW(h_sim, MF_STRING, static_cast<UINT_PTR>(kMenuSimReset), L"Reset simulation");
+  AppendMenuW(h_sim, MF_SEPARATOR, 0, nullptr);
+  AppendMenuW(h_sim, MF_STRING, static_cast<UINT_PTR>(kMenuSimSpeed025), L"Time scale 0.25x");
+  AppendMenuW(h_sim, MF_STRING, static_cast<UINT_PTR>(kMenuSimSpeed05), L"Time scale 0.5x");
+  AppendMenuW(h_sim, MF_STRING, static_cast<UINT_PTR>(kMenuSimSpeed1), L"Time scale 1x");
+  AppendMenuW(h_sim, MF_STRING, static_cast<UINT_PTR>(kMenuSimSpeed2), L"Time scale 2x");
+  AppendMenuW(h_sim, MF_STRING, static_cast<UINT_PTR>(kMenuSimSpeed4), L"Time scale 4x");
+  CheckMenuRadioItem(h_sim, kMenuSimSpeed025, kMenuSimSpeed4, kMenuSimSpeed1, MF_BYCOMMAND);
+  AppendMenuW(h_bar, MF_POPUP, reinterpret_cast<UINT_PTR>(h_sim), L"Simulation");
+  DrawMenuBar(static_cast<HWND>(hwnd_main_));
+}
+
+void SituationViewShell::sync_simulation_menu_from_engine() {
+  if (engine_sim_menu_ == nullptr || hmenu_sim_ == nullptr) {
+    return;
+  }
+  HMENU h_sim = static_cast<HMENU>(hmenu_sim_);
+  const double ts = engine_sim_menu_->time_scale();
+  static constexpr double kScales[] = {0.25, 0.5, 1.0, 2.0, 4.0};
+  unsigned cmd = kMenuSimSpeed1;
+  for (unsigned i = 0; i < sizeof(kScales) / sizeof(kScales[0]); ++i) {
+    if (std::fabs(ts - kScales[i]) < 1e-5) {
+      cmd = kMenuSimSpeed025 + i;
+      break;
+    }
+  }
+  CheckMenuRadioItem(h_sim, kMenuSimSpeed025, kMenuSimSpeed4, cmd, MF_BYCOMMAND);
+}
 #else
 void SituationViewShell::install_win32_view_menu(cw::render::GlWindow&) {}
+void SituationViewShell::install_win32_simulation_menu(cw::render::GlWindow&) {}
+void SituationViewShell::sync_simulation_menu_from_engine() {}
 #endif
 
 void SituationViewShell::process_mouse_drag(cw::render::GlWindow& win, cw::engine::Engine& engine,
@@ -230,15 +329,21 @@ void SituationViewShell::pre_draw_split_sync(cw::engine::Engine& engine, int cli
   if (split_initial_sync_pending_) {
     globe_.orient_content_to_place_lonlat_at_screen_center(t_lon, t_lat);
     split_initial_sync_pending_ = false;
-    sync_scale_left_to_right();
+    if (split_scale_sync_enabled_) {
+      sync_scale_left_to_right();
+    }
   } else if (only_right) {
     tactical_.set_frustum_center_lonlat(engine, split_x, client_h, g_lon, g_lat);
-    sync_scale_right_to_left();
+    if (split_scale_sync_enabled_) {
+      sync_scale_right_to_left();
+    }
   } else {
     if (split_left_driven || split_right_driven) {
       globe_.orient_content_to_place_lonlat_at_screen_center(t_lon, t_lat);
     }
-    sync_scale_left_to_right();
+    if (split_scale_sync_enabled_) {
+      sync_scale_left_to_right();
+    }
   }
 }
 

@@ -23,6 +23,8 @@
 #include "cw/situation_view/situation_map_globe_render.hpp"
 #include "cw/situation_view/situation_view_shell.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <string>
 
@@ -36,6 +38,23 @@ void check(cw::Error e, const char* what) {
                                     .append(std::to_string(static_cast<int>(e))));
     std::exit(EXIT_FAILURE);
   }
+}
+
+void adjust_engine_time_scale_by_step(cw::engine::Engine& e, int dir) {
+  static constexpr double kScales[] = {0.25, 0.5, 1.0, 2.0, 4.0};
+  constexpr int n = 5;
+  const double cur = e.time_scale();
+  int best = 0;
+  double best_d = 1e100;
+  for (int i = 0; i < n; ++i) {
+    const double d = std::fabs(kScales[i] - cur);
+    if (d < best_d) {
+      best_d = d;
+      best = i;
+    }
+  }
+  const int ni = std::clamp(best + dir, 0, n - 1);
+  static_cast<void>(e.set_time_scale(kScales[ni]));
 }
 
 }  // namespace
@@ -70,6 +89,11 @@ int main(int argc, char** argv) {
 
   cw::situation_view::SituationViewShell shell;
   shell.install_win32_view_menu(win);
+  if (!map_only) {
+    shell.set_simulation_menu_engine(&engine);
+    shell.set_scenario_for_reset(&sc);
+    shell.install_win32_simulation_menu(win);
+  }
 
   GLuint hud_font_base = 0;
   {
@@ -214,6 +238,10 @@ int main(int argc, char** argv) {
   QueryPerformanceFrequency(&freq);
   QueryPerformanceCounter(&prev);
 
+  /// 固定步长仿真：将墙钟时间欠账跨帧累积，否则在 `time_scale==1` 且 `dt` 略小于 `fixed_step` 时整帧无 `step()`，
+  /// 表现为 1x 不推进、倍速反而正常。
+  double sim_time_debt = 0.0;
+
   while (win.is_open() && !win.should_close()) {
     win.poll_events();
 
@@ -229,13 +257,22 @@ int main(int argc, char** argv) {
         static_cast<double>(now.QuadPart - prev.QuadPart) / static_cast<double>(freq.QuadPart);
     prev = now;
 
-    double debt = dt * engine.time_scale();
     const double step = engine.fixed_step();
     constexpr int kMaxStepsPerFrame = 8;
+    if (engine.state() == cw::engine::EngineState::Running) {
+      sim_time_debt += dt * engine.time_scale();
+      const double max_carry = step * static_cast<double>(kMaxStepsPerFrame);
+      if (sim_time_debt > max_carry) {
+        sim_time_debt = max_carry;
+      }
+    } else {
+      sim_time_debt = 0.0;
+    }
     int n = 0;
-    while (debt >= step && n < kMaxStepsPerFrame && engine.state() == cw::engine::EngineState::Running) {
+    while (sim_time_debt >= step && n < kMaxStepsPerFrame &&
+           engine.state() == cw::engine::EngineState::Running) {
       engine.step();
-      debt -= step;
+      sim_time_debt -= step;
       ++n;
     }
 
@@ -256,6 +293,9 @@ int main(int argc, char** argv) {
     win.swap_buffers();
 
 #ifdef _WIN32
+    if (!map_only) {
+      shell.sync_simulation_menu_from_engine();
+    }
     if ((GetAsyncKeyState(VK_HOME) & 0x1) != 0) {
       shell.reset_view_camera();
     }
@@ -264,6 +304,14 @@ int main(int argc, char** argv) {
         check(engine.pause(), "pause");
       } else if (engine.state() == cw::engine::EngineState::Paused) {
         check(engine.start(), "start");
+      }
+    }
+    if (!map_only) {
+      if (((GetAsyncKeyState(VK_OEM_PLUS) & 0x1) != 0) || ((GetAsyncKeyState(VK_ADD) & 0x1) != 0)) {
+        adjust_engine_time_scale_by_step(engine, +1);
+      }
+      if (((GetAsyncKeyState(VK_OEM_MINUS) & 0x1) != 0) || ((GetAsyncKeyState(VK_SUBTRACT) & 0x1) != 0)) {
+        adjust_engine_time_scale_by_step(engine, -1);
       }
     }
     if ((GetAsyncKeyState(VK_ESCAPE) & 0x1) != 0) {

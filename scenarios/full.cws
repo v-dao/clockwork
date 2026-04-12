@@ -2,42 +2,46 @@
 
 version 2
 
-# entity 仅声明挂载模型；位置/速度用 entity_pos、entity_vel（默认 0）
+# entity 仅声明挂载模型；位置/机体系速度与姿态用 entity_pos、entity_vel、entity_att（默认 0）
 entity alpha mover sensor
 entity_pos alpha geo 0 0 1000
+entity_att alpha 45 0 0
 entity_vel alpha 10 5 0
 entity_id alpha UAV-A001
-faction alpha blue
+entity_faction alpha blue
 # 态势色（0..255）；与 cornflowerblue / #ff6633 等价，兼容未重链的旧 viewer
-color alpha cornflowerblue
-variant alpha FQ-16A
-icon2d alpha assets/icons/AirPlane.svg
-model3d alpha assets/models/f16.cwm
-attr alpha max_g 9.0
-mparam alpha sensor range_m 8000
-mparam alpha mover max_speed_mps 340
-script_lua alpha logic/uav_main.lua entry on_tick
+entity_color alpha cornflowerblue
+entity_variant alpha FQ-16A
+entity_icon2d alpha assets/icons/AirPlane.svg
+entity_model3d alpha assets/models/f16.cwm
+entity_attr alpha max_g 9.0
+entity_mparam alpha sensor range_m 8000
+entity_mparam alpha mover max_speed_mps 340
+entity_script alpha lua logic/uav_main.lua entry on_tick
 
 entity bravo signature
 entity_pos bravo geo 0.1179663 0 500
-icon2d bravo assets/icons/AirPlane.svg
-faction bravo red
-color bravo 255 102 51
-script_blueprint bravo bp/decoy.json
+entity_icon2d bravo assets/icons/AirPlane.svg
+entity_faction bravo red
+entity_color bravo 255 102 51
+entity_script bravo blueprint bp/decoy.json
 
-#route patrol1 north_patrol
-#route_pt_geo patrol1 0 0 0
-#route_pt_geo patrol1 0.5 0 0
-#route_pt_geo patrol1 0.5 0.5 0
+route patrol1 north_patrol
+route_pt_geo patrol1 0 0 0
+route_pt_geo patrol1 0.5 0 0
+route_pt_geo patrol1 0.5 0.5 0
+
+# mover route 填航线 id（route 行第一个 token），与展示名 north_patrol 不同
+entity_mparam alpha mover route patrol1
 
 # airspace_box_geo cor1 0 0 0 0.08 0.08 0
 # air_attr cor1 label training_corridor
 
-# airspace_poly ao_warn
-# ap_vert_geo ao_warn 0 0 0
-# ap_vert_geo ao_warn 0.008993 0 0
-# ap_vert_geo ao_warn 0.0044965 0.0071865 0
-# air_attr ao_warn class warning
+airspace_poly ao_warn
+ap_vert_geo ao_warn 0 0 0
+ap_vert_geo ao_warn 0.008993 0 0
+ap_vert_geo ao_warn 0.0044965 0.0071865 0
+air_attr ao_warn class warning
 
 comm_node gw1 entity alpha bw 1000000 lat_ms 2.0
 comm_node gw2 entity bravo bw 500000 lat_ms 5.0

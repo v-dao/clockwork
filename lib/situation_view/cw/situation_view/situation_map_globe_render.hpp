@@ -65,6 +65,9 @@ void draw_split_divider(int vp_w, int vp_h, int split_x);
 [[nodiscard]] GLuint create_hud_bitmap_font_lists(HDC hdc);
 void draw_hud_gl(int vp_w, int vp_h, GLuint font_base, const SituationHud& hud,
                  const std::vector<cw::render::GlobeLonLatLabel>* grid_labels);
+/// 仿真时间、倍速、引擎状态；可选右上角实体简表（`show_entity_list` 且态势中有实体时）。
+void draw_simulation_overlay_gl(int vp_w, int vp_h, GLuint font_base, const cw::engine::Engine& eng,
+                                bool show_entity_list);
 #endif
 
 }  // namespace cw::situation_view

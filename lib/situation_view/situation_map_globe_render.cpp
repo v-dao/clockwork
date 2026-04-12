@@ -10,7 +10,9 @@
 
 #include "cw/situation_view/situation_map_globe_render.hpp"
 
+#include "cw/ecs/entity_coordinate_system.hpp"
 #include "cw/engine/engine.hpp"
+#include "cw/engine/types.hpp"
 #include "cw/render/globe_program.hpp"
 #include "cw/render/globe_view_3d.hpp"
 #include "cw/render/lonlat_grid.hpp"
@@ -259,7 +261,7 @@ void entity_display_rgb(const cw::engine::EntitySituation& e, float& r, float& g
 void draw_entities(const cw::engine::Engine& eng, float world_width_m, float world_height_m,
                    int vp_w, int vp_h, float cx_ref, IconTextureCache& icon_cache) {
   // 实体符号：屏幕像素近似固定（不随地图缩放变化）。速度矢量用世界尺度 `vscale`，但放大后 vscale 很小，
-  // 矢量在世界米下短于亚像素，故对屏幕长度设下限，与三维（用全球尺度常数）观感一致。
+  // 矢量在世界米下短于亚像素，故对屏幕长度设下限；三维地球侧用同一套 `vscale` 与最小像素长。
   const float vpwf = static_cast<float>(std::max(1, vp_w));
   const float vphf = static_cast<float>(std::max(1, vp_h));
   const float m_per_px_x = world_width_m / vpwf;
@@ -305,10 +307,10 @@ void draw_entities(const cw::engine::Engine& eng, float world_width_m, float wor
       glColor4f(cr, cg, cb, 1.F);
       glPushMatrix();
       glTranslatef(x, y, 0.F);
-      if (vm > 0.5F) {
-        /// SVG 光栅 + `glTexImage2D` 首行在纹理底边（v=0），机头在纹理「下」侧，贴到四边形后朝世界 −Y；
-        /// 速度矢量 (vx,vy) 在墨卡托 +X/+Y。用 atan2(vy,vx)+90° 使机头与矢量同向（旧 −90° 假定机头朝 +Y，会差 90°）。
-        const float ang_deg = std::atan2(vy, vx) * 57.2957795F + 90.F;
+      /// 机头方向由 `entity_att`（态势中的 yaw/pitch/roll）经 ECS 变换；与速度矢量解耦。
+      {
+        const float ang_deg =
+            cw::ecs::EntityCoordinateSystem::icon_rotation_deg_mercator(e.yaw_deg, e.pitch_deg, e.roll_deg);
         glRotatef(ang_deg, 0.F, 0.F, 1.F);
       }
       glBegin(GL_QUADS);
@@ -525,12 +527,20 @@ void draw_detections_globe(const cw::engine::Engine& eng,
   glDisable(GL_LINE_STIPPLE);
 }
 
-void draw_entities_globe(const cw::engine::Engine& eng, float cx_ref) {
+void draw_entities_globe(const cw::engine::Engine& eng, float cx_ref,
+                         const cw::render::GlobeEarthView& globe, int vp_w, int vp_h) {
   glDisable(GL_TEXTURE_2D);
   constexpr float kR = 1.006F;
+  const float vpwf = static_cast<float>(std::max(1, vp_w));
+  const float vphf = static_cast<float>(std::max(1, vp_h));
+  const double ew_d = globe.visible_ground_ew_meters(vp_w, vp_h);
+  const float world_width_m = static_cast<float>(std::max(ew_d, 1.0));
+  const float world_height_m = world_width_m * vphf / vpwf;
   const float vscale =
-      std::max(8.F, std::min(cw::render::TacticalMercatorMap::kWorldWidthM * 0.00012F,
-                             cw::render::TacticalMercatorMap::kWorldWidthM * 0.00003F));
+      std::max(2.F, std::min(world_width_m * 0.00012F, world_width_m * 0.00003F));
+  constexpr float kMinSpeedVecPx = 32.F;
+  const float m_per_px_x = world_width_m / vpwf;
+  const float m_per_px_y = world_height_m / vphf;
   const auto& snap = eng.situation();
   glEnable(GL_BLEND);
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -556,9 +566,17 @@ void draw_entities_globe(const cw::engine::Engine& eng, float cx_ref) {
     const float vy = e.velocity.y;
     const float vm = std::sqrt(vx * vx + vy * vy);
     if (vm > 0.5F) {
+      float dx = vx * vscale;
+      float dy = vy * vscale;
+      const float px_len = std::hypot(dx / m_per_px_x, dy / m_per_px_y);
+      if (px_len < kMinSpeedVecPx && px_len > 1e-6F) {
+        const float t = kMinSpeedVecPx / px_len;
+        dx *= t;
+        dy *= t;
+      }
       const double ex_m = static_cast<double>(cw::render::TacticalMercatorMap::mercator_periodic_x(e.position.x, cx_ref)) +
-                          static_cast<double>(vx) * static_cast<double>(vscale);
-      const double ey_m = static_cast<double>(e.position.y) + static_cast<double>(vy) * static_cast<double>(vscale);
+                          static_cast<double>(dx);
+      const double ey_m = static_cast<double>(e.position.y) + static_cast<double>(dy);
       double lon2 = 0.;
       double lat2 = 0.;
       mercator_meters_to_lonlat(ex_m, ey_m, lon2, lat2);
@@ -855,7 +873,7 @@ void draw_frame_globe(const cw::engine::Engine& eng, SituationViewShell& shell, 
       pos_by_id[e.id] = e.position;
     }
     draw_detections_globe(eng, pos_by_id, cx_ref);
-    draw_entities_globe(eng, cx_ref);
+    draw_entities_globe(eng, cx_ref, shell.globe_view(), vp_w, vp_h);
   }
 
   glDisable(GL_DEPTH_TEST);
@@ -1022,6 +1040,98 @@ void draw_hud_gl(int vp_w, int vp_h, GLuint font_base, const SituationHud& hud,
       glPixelZoom(1.F, 1.F);
     }
     glDisable(GL_BLEND);
+  }
+
+  glPopMatrix();
+  glMatrixMode(GL_PROJECTION);
+  glPopMatrix();
+  glMatrixMode(GL_MODELVIEW);
+}
+
+namespace {
+
+const char* engine_state_hud_label(cw::engine::EngineState s) {
+  using cw::engine::EngineState;
+  switch (s) {
+    case EngineState::Uninitialized:
+      return "Uninit";
+    case EngineState::Ready:
+      return "Ready";
+    case EngineState::Running:
+      return "Running";
+    case EngineState::Paused:
+      return "Paused";
+    case EngineState::Stopped:
+      return "Stopped";
+    default:
+      return "?";
+  }
+}
+
+}  // namespace
+
+void draw_simulation_overlay_gl(int vp_w, int vp_h, GLuint font_base, const cw::engine::Engine& eng,
+                                bool show_entity_list) {
+  if (font_base == 0 || vp_w < 8 || vp_h < 8) {
+    return;
+  }
+  const cw::engine::SituationSnapshot& snap = eng.situation();
+  char status[192];
+  std::snprintf(status, sizeof(status), "Sim t=%.2fs  x%.4g  [%s]", snap.sim_time, snap.time_scale,
+                engine_state_hud_label(snap.engine_state));
+
+  glDisable(GL_TEXTURE_2D);
+  glDisable(GL_BLEND);
+  glMatrixMode(GL_PROJECTION);
+  glPushMatrix();
+  glLoadIdentity();
+  glOrtho(0.0, static_cast<double>(vp_w), static_cast<double>(vp_h), 0.0, -1.0, 1.0);
+  glMatrixMode(GL_MODELVIEW);
+  glPushMatrix();
+  glLoadIdentity();
+
+  const int y_top = 6;
+  const int line_h = 18;
+
+  auto draw_ascii = [font_base](const char* s, int x, int y) {
+    glColor3f(0.02F, 0.02F, 0.04F);
+    glRasterPos2i(x + 1, y + 1);
+    glListBase(font_base - 32);
+    glCallLists(static_cast<GLsizei>(std::strlen(s)), GL_UNSIGNED_BYTE,
+                reinterpret_cast<const GLubyte*>(s));
+    glColor3f(0.85F, 0.92F, 0.78F);
+    glRasterPos2i(x, y);
+    glListBase(font_base - 32);
+    glCallLists(static_cast<GLsizei>(std::strlen(s)), GL_UNSIGNED_BYTE,
+                reinterpret_cast<const GLubyte*>(s));
+  };
+
+  draw_ascii(status, 6, y_top);
+  const int ent_y0 = y_top + line_h;
+
+  if (show_entity_list && !snap.entities.empty()) {
+    constexpr int kMaxLines = 16;
+    constexpr int kApproxCharPx = 12;
+    const int n = static_cast<int>(std::min(snap.entities.size(), static_cast<std::size_t>(kMaxLines)));
+    for (int i = 0; i < n; ++i) {
+      const auto& e = snap.entities[static_cast<std::size_t>(i)];
+      char line[96];
+      const char* nm = e.name.empty() ? e.external_id.c_str() : e.name.c_str();
+      if (nm[0] == '\0') {
+        nm = "(entity)";
+      }
+      std::snprintf(line, sizeof(line), "%u  %.48s", static_cast<unsigned>(e.id), nm);
+      const int text_w = static_cast<int>(std::strlen(line)) * kApproxCharPx;
+      const int x_right = std::max(6, vp_w - text_w - 8);
+      draw_ascii(line, x_right, ent_y0 + i * line_h);
+    }
+    if (snap.entities.size() > static_cast<std::size_t>(kMaxLines)) {
+      char more[48];
+      std::snprintf(more, sizeof(more), "... +%zu more", snap.entities.size() - kMaxLines);
+      const int text_w = static_cast<int>(std::strlen(more)) * kApproxCharPx;
+      const int x_right = std::max(6, vp_w - text_w - 8);
+      draw_ascii(more, x_right, ent_y0 + n * line_h);
+    }
   }
 
   glPopMatrix();
@@ -1203,15 +1313,19 @@ void draw_frame(const cw::engine::Engine& eng, SituationViewShell& shell, int vp
   if (shell.view_mode() == ViewMode::Globe3d) {
     draw_frame_globe(eng, shell, vp_w, vp_h, cursor_mx, cursor_my, world_vec, world_tex_gl, coastlines,
                       boundary_lines, icon_cache, draw_simulation_layers, hud_out, hud_font_base, true, opts);
-    return;
-  }
-  if (shell.view_mode() == ViewMode::Split2dGlobe) {
+  } else if (shell.view_mode() == ViewMode::Split2dGlobe) {
     draw_frame_split(eng, shell, vp_w, vp_h, cursor_mx, cursor_my, world_vec, world_tex_gl, coastlines,
                       boundary_lines, icon_cache, draw_simulation_layers, hud_out, hud_font_base, opts);
-    return;
+  } else {
+    draw_frame_tactical(eng, shell, vp_w, vp_h, cursor_mx, cursor_my, world_vec, world_tex_gl, coastlines,
+                        boundary_lines, icon_cache, draw_simulation_layers, hud_out, hud_font_base, true, opts);
   }
-  draw_frame_tactical(eng, shell, vp_w, vp_h, cursor_mx, cursor_my, world_vec, world_tex_gl, coastlines,
-                      boundary_lines, icon_cache, draw_simulation_layers, hud_out, hud_font_base, true, opts);
+#ifdef _WIN32
+  glViewport(0, 0, vp_w, vp_h);
+  if (hud_font_base != 0 && draw_simulation_layers) {
+    draw_simulation_overlay_gl(vp_w, vp_h, hud_font_base, eng, true);
+  }
+#endif
 }
 
 }  // namespace cw::situation_view
