@@ -11,10 +11,12 @@ namespace cw::render {
 /// 注记步长随视场角直径反向变化（近大远小），并剔除高纬与掠射处，避免全节点注记。
 /// `camera_distance` 用于自适应经线/纬线间隔；`radius` 略大于 1 可与岸线同层。
 /// 若 `viewport_center_valid`，用视口中心经纬对齐注记相位。相机较近时改为十字注记：中心格为「纬 经」合并串，同纬线只标经度、同经线只标纬度。
+/// `lonlat_step_deg_override`：>0 时强制使用该经/纬线间隔（度），用于分屏与左侧墨卡托战术图 `draw_tactical_lonlat_grid` 共用同一套网格。
 void draw_globe_lonlat_grid(int vp_w, int vp_h, float camera_distance, const double content_R[16],
                             double eye_x, double eye_y, double eye_z, double radius,
                             std::vector<GlobeLonLatLabel>* labels_out, bool viewport_center_valid,
-                            double viewport_center_lon_deg, double viewport_center_lat_deg) noexcept;
+                            double viewport_center_lon_deg, double viewport_center_lat_deg,
+                            double lonlat_step_deg_override = 0.0) noexcept;
 
 
 /// 三维地球：轨道相机 `gluLookAt(eye→0)` + 弧球 `content_R`。

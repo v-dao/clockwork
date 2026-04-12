@@ -815,10 +815,12 @@ void draw_frame_globe(const cw::engine::Engine& eng, SituationViewShell& shell, 
     float gez = 0.F;
     cw::render::GlobeEarthView::compute_eye(shell.globe_view().camera().yaw, shell.globe_view().camera().pitch,
                                             shell.globe_view().camera().distance, gex, gey, gez);
+    const double grid_step_2d_match =
+        (shell.view_mode() == ViewMode::Split2dGlobe) ? shell.split_matched_lonlat_grid_step_deg() : 0.;
     cw::render::draw_globe_lonlat_grid(vp_w, vp_h, shell.globe_view().camera().distance, shell.globe_view().content_R(),
                                        static_cast<double>(gex), static_cast<double>(gey), static_cast<double>(gez),
                                        kGlobeGridR, &globe_grid_labels, globe_viewport_center_valid,
-                                       globe_viewport_center_lon, globe_viewport_center_lat);
+                                       globe_viewport_center_lon, globe_viewport_center_lat, grid_step_2d_match);
   }
   glLineWidth(1.F);
   glColor3f(1.F, 1.F, 1.F);

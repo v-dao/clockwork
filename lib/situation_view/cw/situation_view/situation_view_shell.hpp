@@ -45,6 +45,11 @@ class SituationViewShell {
   void pre_draw_split_sync(cw::engine::Engine& engine, int client_w, int client_h, bool split_left_driven,
                            bool split_right_driven);
 
+  /// 分屏时与左侧战术图一致的经纬网格步长（度）；非分屏或未更新时为 0。
+  [[nodiscard]] double split_matched_lonlat_grid_step_deg() const noexcept {
+    return split_matched_lonlat_grid_step_deg_;
+  }
+
  private:
 #ifdef _WIN32
   void on_win32_menu_command(unsigned cmd);
@@ -55,6 +60,7 @@ class SituationViewShell {
   cw::render::GlobeEarthView globe_{};
   ViewMode view_mode_ = ViewMode::Tactical2D;
   bool split_initial_sync_pending_ = false;
+  double split_matched_lonlat_grid_step_deg_ = 0.;
   bool drag_prev_valid_ = false;
   int drag_prev_mx_ = 0;
   int drag_prev_my_ = 0;

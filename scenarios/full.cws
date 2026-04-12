@@ -26,11 +26,11 @@ color bravo 255 102 51
 script_blueprint bravo bp/decoy.json
 
 route patrol1 north_patrol
-route_pt_geo patrol1 0 0 1000
-route_pt_geo patrol1 0.0449155 0 1000
-route_pt_geo patrol1 0.0449155 0.0449155 1500
+route_pt_geo patrol1 0 0 0
+route_pt_geo patrol1 0.0449155 0 0
+route_pt_geo patrol1 0.0449155 0.0449155 0
 
-airspace_box_geo cor1 0 0 0 0.089831 0.089831 3000
+airspace_box_geo cor1 0 0 0 0.089831 0.089831 0
 air_attr cor1 label training_corridor
 
 airspace_poly ao_warn

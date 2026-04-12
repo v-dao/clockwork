@@ -2,6 +2,7 @@
 
 #include "cw/engine/engine.hpp"
 #include "cw/render/gl_window.hpp"
+#include "cw/render/lonlat_grid.hpp"
 #include "cw/render/mercator_geo.hpp"
 
 #include <cmath>
@@ -171,6 +172,7 @@ void SituationViewShell::process_wheel(cw::render::GlWindow& win, bool& split_le
 void SituationViewShell::pre_draw_split_sync(cw::engine::Engine& engine, int client_w, int client_h,
                                              bool split_left_driven, bool split_right_driven) {
   if (view_mode_ != ViewMode::Split2dGlobe) {
+    split_matched_lonlat_grid_step_deg_ = 0.;
     return;
   }
   const int split_x = std::max(1, client_w / 2);
@@ -184,6 +186,12 @@ void SituationViewShell::pre_draw_split_sync(cw::engine::Engine& engine, int cli
   tactical_.expand_bounds_from_engine(engine, b);
   cw::render::MercatorOrthoFrustum tact{};
   tactical_.compute_interactive_frustum(b, split_x, client_h, tact);
+  {
+    const float cx_ref = (tact.l + tact.r) * 0.5F;
+    const double span = cw::render::tactical_frustum_lonlat_span_deg(tact, cx_ref);
+    const float equiv_d = cw::render::tactical_equiv_camera_distance_from_span_deg(span);
+    split_matched_lonlat_grid_step_deg_ = cw::render::pick_lonlat_step_deg(span, equiv_d);
+  }
   const double tcx = static_cast<double>((tact.l + tact.r) * 0.5F);
   const double tcy = static_cast<double>((tact.b + tact.t) * 0.5F);
   double t_lon = 0.;

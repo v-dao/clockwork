@@ -123,7 +123,8 @@ bool surface_point_label_view_ok(const double R[16], double px, double py, doubl
 void draw_globe_lonlat_grid(int vp_w, int vp_h, float camera_distance, const double content_R[16],
                             double eye_x, double eye_y, double eye_z, double radius,
                             std::vector<GlobeLonLatLabel>* labels_out, bool viewport_center_valid,
-                            double viewport_center_lon_deg, double viewport_center_lat_deg) noexcept {
+                            double viewport_center_lon_deg, double viewport_center_lat_deg,
+                            double lonlat_step_deg_override) noexcept {
   if (vp_w < 2 || vp_h < 2 || !(radius > 0.0)) {
     return;
   }
@@ -132,7 +133,9 @@ void draw_globe_lonlat_grid(int vp_w, int vp_h, float camera_distance, const dou
   }
 
   const double span = visible_sphere_diameter_deg(camera_distance);
-  const double step = pick_lonlat_step_deg(span, camera_distance);
+  const double step = (lonlat_step_deg_override > 0.0)
+                          ? lonlat_step_deg_override
+                          : pick_lonlat_step_deg(span, camera_distance);
 
   const float ref_d = 3.2F;
   float pixel_scale = static_cast<float>(ref_d / std::max(1.001F, camera_distance));
