@@ -1,0 +1,63 @@
+# Clockwork — Ninja build (g++, C++20).
+# Windows MinGW: keep exe_ext = .exe
+# Linux/macOS: set exe_ext = (empty) for smoke / verify without extension
+
+builddir = build
+exe_ext = .exe
+
+cxx = g++
+cxxflags = -std=c++20 -Wall -Wextra -Wpedantic -O2
+includes = -Ilib/core -Ilib/math -Ilib/engine -Ilib/scenario -Ilib/render
+
+smoke_bin = $builddir/cmd/smoke/smoke$exe_ext
+verify_bin = $builddir/cmd/verify/verify$exe_ext
+engine_demo_bin = $builddir/cmd/engine_demo/engine_demo$exe_ext
+scenario_demo_bin = $builddir/cmd/scenario_demo/scenario_demo$exe_ext
+model_demo_bin = $builddir/cmd/model_demo/model_demo$exe_ext
+situation_view_bin = $builddir/cmd/situation_view/situation_view$exe_ext
+
+rule cxx
+  command = $cxx $cxxflags $includes -c $in -o $out
+  description = CXX $out
+
+rule link
+  command = $cxx $cxxflags $includes $in -o $out
+  description = LINK $out
+
+# 阶段 4：Win32 + OpenGL（MinGW 链接 gdi32 / opengl32 / user32）。非 Windows 请从 default 中移除此目标。
+rule link_gui
+  command = $cxx $cxxflags $includes $in -o $out -lglu32 -lgdi32 -lopengl32 -luser32
+  description = LINK_GUI $out
+
+build $builddir/lib/core/log.o: cxx lib/core/log.cpp
+build $builddir/lib/math/vec3.o: cxx lib/math/vec3.cpp
+build $builddir/lib/math/linalg.o: cxx lib/math/linalg.cpp
+build $builddir/lib/engine/types.o: cxx lib/engine/types.cpp
+build $builddir/lib/engine/engine.o: cxx lib/engine/engine.cpp
+build $builddir/lib/scenario/parse.o: cxx lib/scenario/parse.cpp
+build $builddir/lib/render/gl_window_win32.o: cxx lib/render/gl_window_win32.cpp
+build $builddir/lib/render/texture_bmp.o: cxx lib/render/texture_bmp.cpp
+build $builddir/lib/render/svg_line_texture.o: cxx lib/render/svg_line_texture.cpp
+build $builddir/lib/render/world_vector_merc.o: cxx lib/render/world_vector_merc.cpp
+build $builddir/lib/render/world_vector_lines.o: cxx lib/render/world_vector_lines.cpp
+build $builddir/lib/render/globe_program.o: cxx lib/render/globe_program.cpp
+build $builddir/lib/render/tactical_map_2d.o: cxx lib/render/tactical_map_2d.cpp
+build $builddir/lib/render/globe_view_3d.o: cxx lib/render/globe_view_3d.cpp
+build $builddir/lib/render/lonlat_grid.o: cxx lib/render/lonlat_grid.cpp
+
+build $smoke_bin: link cmd/smoke/smoke.cpp $builddir/lib/core/log.o $builddir/lib/math/vec3.o
+build $verify_bin: link cmd/verify/verify.cpp $builddir/lib/core/log.o $builddir/lib/math/vec3.o
+build $engine_demo_bin: link cmd/engine_demo/engine_demo.cpp $builddir/lib/core/log.o $builddir/lib/math/vec3.o $builddir/lib/engine/types.o $builddir/lib/engine/engine.o
+build $scenario_demo_bin: link cmd/scenario_demo/scenario_demo.cpp $builddir/lib/core/log.o $builddir/lib/math/vec3.o $builddir/lib/engine/types.o $builddir/lib/engine/engine.o $builddir/lib/scenario/parse.o
+build $model_demo_bin: link cmd/model_demo/model_demo.cpp $builddir/lib/core/log.o $builddir/lib/math/vec3.o $builddir/lib/engine/types.o $builddir/lib/engine/engine.o $builddir/lib/scenario/parse.o
+build $situation_view_bin: link_gui cmd/situation_view/situation_view.cpp $builddir/lib/core/log.o $builddir/lib/math/vec3.o $builddir/lib/math/linalg.o $builddir/lib/engine/types.o $builddir/lib/engine/engine.o $builddir/lib/scenario/parse.o $builddir/lib/render/gl_window_win32.o $builddir/lib/render/texture_bmp.o $builddir/lib/render/svg_line_texture.o $builddir/lib/render/world_vector_merc.o $builddir/lib/render/world_vector_lines.o $builddir/lib/render/globe_program.o $builddir/lib/render/tactical_map_2d.o $builddir/lib/render/lonlat_grid.o $builddir/lib/render/globe_view_3d.o
+
+# compile_commands.json for clangd / IDE (requires Python 3 on PATH; NINJA env overrides ninja binary)
+python = python
+rule regen_compdb
+  command = $python scripts/gen_compile_commands.py
+  description = GEN compile_commands.json
+
+build $builddir/compile_commands.json: regen_compdb | build.ninja scripts/gen_compile_commands.py
+
+default $smoke_bin $verify_bin $engine_demo_bin $scenario_demo_bin $model_demo_bin $situation_view_bin $builddir/compile_commands.json
