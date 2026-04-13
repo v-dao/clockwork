@@ -2,6 +2,7 @@
 
 #include "cw/engine/situation.hpp"
 #include "cw/engine/types.hpp"
+#include "cw/render/graphics_types.hpp"
 #include "cw/render/lonlat_grid.hpp"
 #include "cw/situation_view/icon_texture_cache.hpp"
 #include "cw/situation_view/situation_hud.hpp"
@@ -56,7 +57,8 @@ void draw_frame(const cw::engine::SituationPresentation& world, SituationViewShe
                 const cw::render::WorldVectorLines* coastlines,
                 const cw::render::WorldVectorLines* boundary_lines, IconTextureCache& icon_cache,
                 bool draw_simulation_layers, SituationHud* hud_out, GLuint hud_font_base,
-                const SituationRenderOptions& opts);
+                const SituationRenderOptions& opts, double perf_fps, double perf_frame_ms,
+                cw::render::GraphicsApi perf_present_api);
 
 void draw_split_divider(int vp_w, int vp_h, int split_x);
 
@@ -70,9 +72,11 @@ void draw_hud_gl(int vp_w, int vp_h, GLuint font_base, const SituationHud& hud,
                  const std::vector<cw::render::GlobeLonLatLabel>* grid_labels);
 /// 仿真时间、倍速、引擎状态；可选右上角实体简表（`show_entity_list` 且态势中有实体时）。
 /// `detail_entity`：左键点选后左上角显示该实体属性；无则传 `std::nullopt`。
+void draw_perf_overlay_gl(int vp_w, int vp_h, GLuint font_base, double fps, double frame_ms,
+                          cw::render::GraphicsApi present_api);
 void draw_simulation_overlay_gl(int vp_w, int vp_h, GLuint font_base,
                                 const cw::engine::SituationPresentation& world, bool show_entity_list,
-                                std::optional<cw::engine::EntityId> detail_entity);
+                                std::optional<cw::engine::EntityId> detail_entity, int extra_top_pad_px = 0);
 #endif
 
 }  // namespace cw::situation_view

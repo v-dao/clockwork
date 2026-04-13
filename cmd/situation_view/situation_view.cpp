@@ -20,7 +20,6 @@
 #include "cw/render/graphics_device.hpp"
 #include "cw/render/graphics_types.hpp"
 #include "cw/render/globe_program.hpp"
-#include "cw/render/texture_bmp.hpp"
 #include "cw/render/world_vector_lines.hpp"
 #include "cw/render/world_vector_merc.hpp"
 #include "cw/scenario/parse.hpp"
@@ -195,7 +194,7 @@ int main(int argc, char** argv) {
               "situation_view: optional vector land not found (assets/maps/world_land.merc2). "
               "Generate from repo root: python scripts/build_world_vector_merc.py "
               "(downloads Natural Earth 110m land GeoJSON if needed). "
-              "Otherwise raster BMP or ocean-only underlay is used.");
+              "Without it, tactical/globe underlay is ocean-only unless vector fill is enabled elsewhere.");
     }
   
     if (gl_for_scene && render_opts.show_land_basemap && vector_loaded_from != nullptr &&
@@ -205,36 +204,6 @@ int main(int argc, char** argv) {
       } else {
         cw::log(cw::LogLevel::Info,
                 "situation_view: mercator land atlas build failed (3D uses tessellated land fill)");
-      }
-    }
-  
-    cw::render::Texture2DRgb world_tex{};
-    const char* map_loaded_from = nullptr;
-    if (vector_loaded_from == nullptr && gl_for_scene) {
-      const char* const kMapCandidates[] = {
-          "assets/maps/world_equirect_4096x2048.bmp",
-          "../assets/maps/world_equirect_4096x2048.bmp",
-          "../../assets/maps/world_equirect_4096x2048.bmp",
-          "assets/maps/world_equirect_2048x1024.bmp",
-          "../assets/maps/world_equirect_2048x1024.bmp",
-          "../../assets/maps/world_equirect_2048x1024.bmp",
-          "assets/maps/world_equirect_1024x512.bmp",
-          "../assets/maps/world_equirect_1024x512.bmp",
-          "../../assets/maps/world_equirect_1024x512.bmp",
-      };
-      for (const char* rel : kMapCandidates) {
-        const std::string p = cw::situation_view::resolve_asset_path_utf8(rel);
-        if (cw::render::load_texture_bmp_rgb24(p.c_str(), world_tex)) {
-          map_loaded_from = p.c_str();
-          break;
-        }
-      }
-      if (map_loaded_from != nullptr) {
-        cw::log(cw::LogLevel::Info,
-                std::string("situation_view: loaded raster basemap ").append(map_loaded_from));
-      } else {
-        cw::log(cw::LogLevel::Info,
-                "situation_view: no basemap (vector or BMP); ocean/land background omitted");
       }
     }
   
@@ -305,6 +274,7 @@ int main(int argc, char** argv) {
   
     #ifdef _WIN32
       bool prev_left_down = false;
+      double fps_ema = 0.0;
     #endif
 
     std::vector<unsigned char> vulkan_readback;
@@ -326,7 +296,13 @@ int main(int argc, char** argv) {
       const double dt =
           static_cast<double>(now.QuadPart - prev.QuadPart) / static_cast<double>(freq.QuadPart);
       prev = now;
-  
+
+      #ifdef _WIN32
+      const double dt_safe = std::max(dt, 1e-9);
+      const double frame_ms_wall = dt * 1000.0;
+      fps_ema = (fps_ema <= 0.0) ? (1.0 / dt_safe) : (fps_ema * 0.92 + (1.0 / dt_safe) * 0.08);
+      #endif
+
       const double step = engine.fixed_step();
       constexpr int kMaxStepsPerFrame = 8;
       if (engine.state() == cw::engine::EngineState::Running) {
@@ -379,10 +355,11 @@ int main(int argc, char** argv) {
             shell.pre_draw_split_sync(world, cw, ch, split_left_driven, split_right_driven);
             cw::situation_view::draw_frame(world, shell, cw, ch, win->mouse_client_x(), win->mouse_client_y(),
                                            world_vec.valid() ? &world_vec : nullptr,
-                                           world_tex.valid() ? world_tex.gl_name : 0U,
+                                           0U,
                                            coastlines.valid() ? &coastlines : nullptr,
                                            boundary_lines.valid() ? &boundary_lines : nullptr, entity_icons,
-                                           !map_only, nullptr, hud_font_base, render_opts);
+                                           !map_only, nullptr, hud_font_base, render_opts, fps_ema, frame_ms_wall,
+                                           gfx->api());
             vulkan_readback.resize(static_cast<std::size_t>(cw) * static_cast<std::size_t>(ch) * 4U);
             offscreen->read_pixels_bgra_tight(cw, ch, vulkan_readback.data());
             gfx->upload_swapchain_from_cpu_bgra(cw, ch, static_cast<std::size_t>(cw) * 4U, vulkan_readback.data());
@@ -391,10 +368,11 @@ int main(int argc, char** argv) {
           shell.pre_draw_split_sync(world, cw, ch, split_left_driven, split_right_driven);
           cw::situation_view::draw_frame(world, shell, cw, ch, win->mouse_client_x(), win->mouse_client_y(),
                                          world_vec.valid() ? &world_vec : nullptr,
-                                         world_tex.valid() ? world_tex.gl_name : 0U,
+                                         0U,
                                          coastlines.valid() ? &coastlines : nullptr,
                                          boundary_lines.valid() ? &boundary_lines : nullptr, entity_icons,
-                                         !map_only, nullptr, hud_font_base, render_opts);
+                                         !map_only, nullptr, hud_font_base, render_opts, fps_ema, frame_ms_wall,
+                                         gfx->api());
         }
       }
       gfx->end_frame();
@@ -449,13 +427,11 @@ int main(int argc, char** argv) {
       coastlines.destroy();
       boundary_lines.destroy();
       world_vec.destroy();
-      cw::render::destroy_texture_2d(world_tex);
       entity_icons.destroy_all();
     } else {
       coastlines.destroy();
       boundary_lines.destroy();
       world_vec.destroy();
-      cw::render::destroy_texture_2d(world_tex);
       entity_icons.destroy_all();
     }
     gfx.reset();

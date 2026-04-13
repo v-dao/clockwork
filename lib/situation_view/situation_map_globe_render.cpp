@@ -1359,8 +1359,56 @@ std::optional<cw::engine::EntityId> try_pick_entity_at_screen(const cw::engine::
   return std::nullopt;
 }
 
+void draw_perf_overlay_gl(int vp_w, int vp_h, GLuint font_base, double fps, double frame_ms,
+                          cw::render::GraphicsApi present_api) {
+  if (font_base == 0 || vp_w < 8 || vp_h < 8) {
+    return;
+  }
+  const char* api_name = present_api == cw::render::GraphicsApi::Vulkan ? "Vulkan" : "OpenGL";
+  char line_fps[72];
+  char line_ms[72];
+  char line_api[96];
+  std::snprintf(line_fps, sizeof(line_fps), "FPS %.1f", fps);
+  std::snprintf(line_ms, sizeof(line_ms), "Frame %.2f ms", frame_ms);
+  std::snprintf(line_api, sizeof(line_api), "Present %s", api_name);
+
+  glDisable(GL_TEXTURE_2D);
+  glDisable(GL_BLEND);
+  glMatrixMode(GL_PROJECTION);
+  glPushMatrix();
+  glLoadIdentity();
+  glOrtho(0.0, static_cast<double>(vp_w), static_cast<double>(vp_h), 0.0, -1.0, 1.0);
+  glMatrixMode(GL_MODELVIEW);
+  glPushMatrix();
+  glLoadIdentity();
+
+  const int line_h = 18;
+  const int y0 = line_h + 4;
+
+  auto draw_ascii = [font_base](const char* s, int x, int y) {
+    glColor3f(0.02F, 0.02F, 0.04F);
+    glRasterPos2i(x + 1, y + 1);
+    glListBase(font_base - 32);
+    glCallLists(static_cast<GLsizei>(std::strlen(s)), GL_UNSIGNED_BYTE, reinterpret_cast<const GLubyte*>(s));
+    glColor3f(0.85F, 0.92F, 0.78F);
+    glRasterPos2i(x, y);
+    glListBase(font_base - 32);
+    glCallLists(static_cast<GLsizei>(std::strlen(s)), GL_UNSIGNED_BYTE, reinterpret_cast<const GLubyte*>(s));
+  };
+
+  draw_ascii(line_fps, 6, y0);
+  draw_ascii(line_ms, 6, y0 + line_h);
+  draw_ascii(line_api, 6, y0 + 2 * line_h);
+
+  glPopMatrix();
+  glMatrixMode(GL_PROJECTION);
+  glPopMatrix();
+  glMatrixMode(GL_MODELVIEW);
+}
+
 void draw_simulation_overlay_gl(int vp_w, int vp_h, GLuint font_base, const cw::engine::SituationPresentation& world,
-                                bool show_entity_list, std::optional<cw::engine::EntityId> detail_entity) {
+                                bool show_entity_list, std::optional<cw::engine::EntityId> detail_entity,
+                                int extra_top_pad_px) {
   if (font_base == 0 || vp_w < 8 || vp_h < 8) {
     return;
   }
@@ -1381,7 +1429,7 @@ void draw_simulation_overlay_gl(int vp_w, int vp_h, GLuint font_base, const cw::
 
   const int line_h = 18;
   /// `wglUseFontBitmaps` 字形自 RasterPos 向上绘制；y 过小则上半截在视口 y=0 处被裁切，看起来像被菜单挡住。
-  const int y_top = line_h + 4;
+  const int y_top = line_h + 4 + extra_top_pad_px;
 
   auto draw_ascii = [font_base](const char* s, int x, int y) {
     glColor3f(0.02F, 0.02F, 0.04F);
@@ -1655,7 +1703,8 @@ void draw_frame(const cw::engine::SituationPresentation& world, SituationViewShe
                 int cursor_mx, int cursor_my, const cw::render::WorldVectorMerc* world_vec, unsigned world_tex_gl,
                 const cw::render::WorldVectorLines* coastlines,
                 const cw::render::WorldVectorLines* boundary_lines, IconTextureCache& icon_cache,
-                bool draw_simulation_layers, SituationHud* hud_out, GLuint hud_font_base, const SituationRenderOptions& opts) {
+                bool draw_simulation_layers, SituationHud* hud_out, GLuint hud_font_base, const SituationRenderOptions& opts,
+                double perf_fps, double perf_frame_ms, cw::render::GraphicsApi perf_present_api) {
   if (shell.view_mode() == ViewMode::Tactical2D) {
     shell.reset_globe_auxiliary_state();
   }
@@ -1671,9 +1720,19 @@ void draw_frame(const cw::engine::SituationPresentation& world, SituationViewShe
   }
 #ifdef _WIN32
   glViewport(0, 0, vp_w, vp_h);
-  if (hud_font_base != 0 && draw_simulation_layers) {
-    draw_simulation_overlay_gl(vp_w, vp_h, hud_font_base, world, true, shell.picked_entity_id());
+  constexpr int kPerfHudLines = 3;
+  constexpr int kHudLinePx = 18;
+  const int sim_extra_pad = (hud_font_base != 0) ? (kPerfHudLines * kHudLinePx) : 0;
+  if (hud_font_base != 0) {
+    draw_perf_overlay_gl(vp_w, vp_h, hud_font_base, perf_fps, perf_frame_ms, perf_present_api);
   }
+  if (hud_font_base != 0 && draw_simulation_layers) {
+    draw_simulation_overlay_gl(vp_w, vp_h, hud_font_base, world, true, shell.picked_entity_id(), sim_extra_pad);
+  }
+#else
+  (void)perf_fps;
+  (void)perf_frame_ms;
+  (void)perf_present_api;
 #endif
 }
 
