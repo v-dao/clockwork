@@ -1,6 +1,7 @@
 #include "cw/render/svg_line_texture.hpp"
 #include "cw/render/texture_bmp.hpp"
 #include "cw/log.hpp"
+#include "cw/string_match.hpp"
 
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -116,19 +117,6 @@ bool parse_float_token(std::string_view s, float& out) noexcept {
   return std::isfinite(v);
 }
 
-bool ieq(std::string_view a, std::string_view b) {
-  if (a.size() != b.size()) {
-    return false;
-  }
-  for (std::size_t i = 0; i < a.size(); ++i) {
-    if (std::tolower(static_cast<unsigned char>(a[i])) !=
-        std::tolower(static_cast<unsigned char>(b[i]))) {
-      return false;
-    }
-  }
-  return true;
-}
-
 bool parse_next_attr(std::string_view tag, std::size_t& pos, std::string_view& name,
                      std::string_view& value) {
   while (pos < tag.size() && static_cast<unsigned char>(tag[pos]) <= ' ') {
@@ -175,7 +163,7 @@ bool find_attr_float(std::string_view tag, const char* key, float& out) {
   std::string_view n;
   std::string_view v;
   while (parse_next_attr(tag, pos, n, v)) {
-    if (ieq(n, key)) {
+    if (cw::ieq(n, key)) {
       return parse_float_token(v, out);
     }
   }
@@ -187,7 +175,7 @@ bool find_attr_string(std::string_view tag, const char* key, std::string_view& o
   std::string_view n;
   std::string_view v;
   while (parse_next_attr(tag, pos, n, v)) {
-    if (ieq(n, key)) {
+    if (cw::ieq(n, key)) {
       out = v;
       return true;
     }

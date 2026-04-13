@@ -1,13 +1,14 @@
 #include "cw/motion/motion_model_3dof.hpp"
 
+#include "cw/math/constants.hpp"
+#include "cw/string_match.hpp"
+
 #include <algorithm>
 #include <cmath>
 
 namespace cw::motion {
 
 namespace {
-
-constexpr float kPi = 3.14159265F;
 
 const cw::scenario::ScenarioRoute* find_route(const std::vector<cw::scenario::ScenarioRoute>& routes,
                                               const std::string& id) {
@@ -73,13 +74,13 @@ void MotionModel3dof::apply_dynamics(MoverRuntimeState& state, const MoverStepIn
     const float vy = state.velocity.y;
     const float vh = std::sqrt(vx * vx + vy * vy);
     if (vh > 0.5F) {
-      state.yaw_deg = std::atan2(vx, vy) * (180.F / kPi);
+      state.yaw_deg = std::atan2(vx, vy) * (180.F / cw::math::kPiF);
     }
     if (in.track_pitch_from_velocity) {
       const float vz = state.velocity.z;
       const float vm = cw::math::length(state.velocity);
       if (vm > 0.5F) {
-        state.pitch_deg = std::asin(std::clamp(vz / vm, -1.F, 1.F)) * (180.F / kPi);
+        state.pitch_deg = std::asin(std::clamp(vz / vm, -1.F, 1.F)) * (180.F / cw::math::kPiF);
       }
     }
   }
@@ -90,29 +91,15 @@ namespace {
 MotionModel3dof g_model_3dof{};
 MotionModelStub g_model_stub{};
 
-bool ieq(const char* a, const char* b) {
-  if (a == nullptr || b == nullptr) {
-    return a == b;
-  }
-  while (*a && *b) {
-    const char ca = (*a >= 'A' && *a <= 'Z') ? static_cast<char>(*a + 32) : *a;
-    const char cb = (*b >= 'A' && *b <= 'Z') ? static_cast<char>(*b + 32) : *b;
-    if (ca != cb) {
-      return false;
-    }
-    ++a;
-    ++b;
-  }
-  return *a == *b;
-}
-
 }  // namespace
 
 const MotionModel& motion_model_for_kind(const std::string& kind) {
-  if (ieq(kind.c_str(), "stub") || ieq(kind.c_str(), "none") || ieq(kind.c_str(), "passive")) {
+  if (cw::ieq_cstr(kind.c_str(), "stub") || cw::ieq_cstr(kind.c_str(), "none") ||
+      cw::ieq_cstr(kind.c_str(), "passive")) {
     return g_model_stub;
   }
-  if (kind.empty() || ieq(kind.c_str(), "3dof") || ieq(kind.c_str(), "three_dof")) {
+  if (kind.empty() || cw::ieq_cstr(kind.c_str(), "3dof") ||
+      cw::ieq_cstr(kind.c_str(), "three_dof")) {
     return g_model_3dof;
   }
   return g_model_3dof;

@@ -2,8 +2,9 @@
 
 #include <chrono>
 #include <cstdio>
-#include <ctime>
 #include <mutex>
+#include <string>
+#include <ctime>
 
 namespace cw {
 
@@ -31,6 +32,20 @@ std::mutex& log_mutex() {
 }
 
 }  // namespace
+
+void log_error(std::string_view operation_context, Error e) noexcept {
+  try {
+    std::string line;
+    line.reserve(operation_context.size() + 64U);
+    line.append(operation_context);
+    line.append(" [");
+    line.append(error_code_str(e));
+    line.append("] ");
+    line.append(error_message(e));
+    log(LogLevel::Error, line);
+  } catch (...) {
+  }
+}
 
 void log(LogLevel level, std::string_view message) noexcept {
   try {

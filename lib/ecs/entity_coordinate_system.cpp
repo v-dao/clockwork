@@ -1,12 +1,12 @@
 #include "cw/ecs/entity_coordinate_system.hpp"
 
+#include "cw/math/constants.hpp"
+
 #include <cmath>
 
 namespace cw::ecs {
 
 namespace {
-
-constexpr double kPi = 3.14159265358979323846;
 
 void mat3_mul_col(const double A[9], const double B[9], double C[9]) {
   for (int c = 0; c < 3; ++c) {
@@ -91,9 +91,9 @@ void body_to_world_rot(double yaw_deg, double pitch_deg, double roll_deg, double
   double Rz[9]{};
   double Ry[9]{};
   double Rx[9]{};
-  rot_z_ned(yaw_deg * (kPi / 180.0), Rz);
-  rot_y_ned(pitch_deg * (kPi / 180.0), Ry);
-  rot_x_ned(roll_deg * (kPi / 180.0), Rx);
+  rot_z_ned(yaw_deg * (cw::math::kPi / 180.0), Rz);
+  rot_y_ned(pitch_deg * (cw::math::kPi / 180.0), Ry);
+  rot_x_ned(roll_deg * (cw::math::kPi / 180.0), Rx);
   double T1[9]{};
   double T2[9]{};
   mat3_mul_col(Ry, Rz, T1);

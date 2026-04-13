@@ -1,0 +1,12 @@
+# model_demo：近距离 sensor / signature，保证 t=0 有探测
+version 1
+
+entity hunter mover sensor
+entity prey signature
+
+entity_pos hunter mercator 0 0 1000
+entity_pos prey mercator 800 0 1000
+
+entity_mparam hunter sensor range_m 50000 fov_deg 360
+entity_mparam hunter mover max_speed_mps 100
+entity_mparam prey signature rcs_m2 12

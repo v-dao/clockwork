@@ -9,5 +9,6 @@
 | [development-plan.md](development-plan.md) | 分阶段开发计划、里程碑与风险 |
 | [scenario-format.md](scenario-format.md) | 文本想定 `.cws` 语法、规则与引擎挂载参数 |
 | [globe-3d-view.md](globe-3d-view.md) | 三维地球视图：北朝上、左键粘点、需求与实现核对 |
+| [code-review-summary.md](code-review-summary.md) | 代码与工程评审摘要：不足与改进建议（对照实现迭代） |
 
 权威需求摘要仍以项目根目录 [README.md](../README.md) 为准；子文档变更时应与之对齐。

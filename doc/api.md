@@ -43,6 +43,22 @@ README 要求支持**保存快照并恢复快照**，且与产品规则一致：
 
 引擎须能可靠判定「是否处于联邦模式」（例如连接建立至会话结束期间均视为分布式）。从单机切换到联邦前，实现可要求先**结束**仿真或清理状态，避免误用残留快照状态。
 
+### 2.2 错误码（实现：`cw::Error`）
+
+公开 API 返回 `cw::Error`；`cw::ok(e)` 判断是否成功。可搭配 **`cw::error_code_str(e)`**（稳定英文标识，便于日志检索）与 **`cw::error_message(e)`**（简短中文说明）。引擎在失败返回前会调用 **`cw::log_error(context, e)`** 写一行诊断日志（含操作上下文与当前状态名，视调用点而定）。
+
+| 值 | `error_code_str` | 典型场景 |
+|----|------------------|----------|
+| `Ok` | `Ok` | 成功 |
+| `InvalidArgument` | `InvalidArgument` | 数值参数非法（如倍速 ≤ 0） |
+| `IOError` | `IOError` | 读想定文件失败等 |
+| `Internal` | `Internal` | 预留 |
+| `NoSnapshot` | `NoSnapshot` | 未 `save_snapshot` 即 `restore_snapshot` |
+| `ParseError` | `ParseError` | 想定文本解析或结构校验失败 |
+| `WrongState` | `WrongState` | 当前引擎状态不允许该操作（如未 `initialize` 即 `start`） |
+| `NotAllowedWhenFederated` | `NotAllowedWhenFederated` | 联邦模式下调用快照 API |
+| `UnsupportedScenarioVersion` | `UnsupportedScenarioVersion` | 想定 `version` 非引擎支持的值 |
+
 ---
 
 ## 3. 想定初始化数据（「限定信息」）

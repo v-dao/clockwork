@@ -1,4 +1,5 @@
 #include "cw/engine/engine.hpp"
+#include "cw/error.hpp"
 #include "cw/log.hpp"
 #include "cw/scenario/parse.hpp"
 
@@ -9,7 +10,13 @@ namespace {
 
 void check(cw::Error e, const char* what) {
   if (!cw::ok(e)) {
-    cw::log(cw::LogLevel::Error, std::string("model_demo: failed: ").append(what));
+    std::string msg = "model_demo: failed: ";
+    msg += what;
+    msg += " [";
+    msg += cw::error_code_str(e);
+    msg += "] ";
+    msg += cw::error_message(e);
+    cw::log(cw::LogLevel::Error, msg);
     std::exit(EXIT_FAILURE);
   }
 }

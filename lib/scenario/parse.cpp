@@ -1,5 +1,8 @@
 #include "cw/scenario/parse.hpp"
 
+#include "cw/math/constants.hpp"
+#include "cw/string_match.hpp"
+
 #include <cctype>
 #include <cmath>
 #include <cstdint>
@@ -92,19 +95,6 @@ std::vector<std::string> split_ws(const std::string& line) {
     tok.push_back(std::move(cur));
   }
   return tok;
-}
-
-bool ieq(std::string_view a, std::string_view b) {
-  if (a.size() != b.size()) {
-    return false;
-  }
-  for (std::size_t i = 0; i < a.size(); ++i) {
-    if (std::tolower(static_cast<unsigned char>(a[i])) !=
-        std::tolower(static_cast<unsigned char>(b[i]))) {
-      return false;
-    }
-  }
-  return true;
 }
 
 bool parse_double(const std::string& s, double& out) {
@@ -298,17 +288,17 @@ bool parse_color_token(const std::string& tok, float& r, float& g, float& b) {
 
 Error model_from_token(const std::string& t, cw::engine::ModelKind& out) {
   using cw::engine::ModelKind;
-  if (ieq(t, "mover")) {
+  if (cw::ieq(t, "mover")) {
     out = ModelKind::Mover;
-  } else if (ieq(t, "sensor")) {
+  } else if (cw::ieq(t, "sensor")) {
     out = ModelKind::Sensor;
-  } else if (ieq(t, "comdevice")) {
+  } else if (cw::ieq(t, "comdevice")) {
     out = ModelKind::Comdevice;
-  } else if (ieq(t, "processor")) {
+  } else if (cw::ieq(t, "processor")) {
     out = ModelKind::Processor;
-  } else if (ieq(t, "weapon")) {
+  } else if (cw::ieq(t, "weapon")) {
     out = ModelKind::Weapon;
-  } else if (ieq(t, "signature")) {
+  } else if (cw::ieq(t, "signature")) {
     out = ModelKind::Signature;
   } else {
     return Error::ParseError;
@@ -391,13 +381,12 @@ Error parse_kv_pairs(const std::vector<std::string>& tok, std::size_t start,
 void lon_lat_alt_to_mercator(double lon_deg, double lat_deg, double alt_m, float& out_x, float& out_y,
                              float& out_z) {
   constexpr double kR = 6378137.0;
-  constexpr double kPi = 3.14159265358979323846;
   constexpr double kMaxLat = 85.0511287798066;
   const double lat_clamped = std::max(-kMaxLat, std::min(kMaxLat, lat_deg));
-  const double lon_rad = lon_deg * (kPi / 180.0);
-  const double lat_rad = lat_clamped * (kPi / 180.0);
+  const double lon_rad = lon_deg * (cw::math::kPi / 180.0);
+  const double lat_rad = lat_clamped * (cw::math::kPi / 180.0);
   double x = kR * lon_rad;
-  double y = kR * std::log(std::tan(kPi / 4.0 + lat_rad * 0.5));
+  double y = kR * std::log(std::tan(cw::math::kPi / 4.0 + lat_rad * 0.5));
   constexpr double kYMax = 20037508.34;
   y = std::max(-kYMax, std::min(kYMax, y));
   out_x = static_cast<float>(x);
@@ -458,7 +447,7 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
     }
     const std::string& cmd = tok[0];
 
-    if (ieq(cmd, "version")) {
+    if (cw::ieq(cmd, "version")) {
       if (tok.size() < 2) {
         return Error::ParseError;
       }
@@ -469,7 +458,7 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
       continue;
     }
 
-    if (ieq(cmd, "entity")) {
+    if (cw::ieq(cmd, "entity")) {
       if (tok.size() < 3) {
         return Error::ParseError;
       }
@@ -494,7 +483,7 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
       continue;
     }
 
-    if (ieq(cmd, "entity_pos")) {
+    if (cw::ieq(cmd, "entity_pos")) {
       if (tok.size() < 4) {
         return Error::ParseError;
       }
@@ -502,7 +491,7 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
       if (!e) {
         return Error::ParseError;
       }
-      if (ieq(tok[2], "geo") || ieq(tok[2], "wgs84") || ieq(tok[2], "ll")) {
+      if (cw::ieq(tok[2], "geo") || cw::ieq(tok[2], "wgs84") || cw::ieq(tok[2], "ll")) {
         if (tok.size() < 6) {
           return Error::ParseError;
         }
@@ -517,7 +506,7 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
         float mz = 0.F;
         lon_lat_alt_to_mercator(lon, lat, alt, mx, my, mz);
         e->position = {mx, my, mz};
-      } else if (ieq(tok[2], "mercator") || ieq(tok[2], "m") || ieq(tok[2], "meters")) {
+      } else if (cw::ieq(tok[2], "mercator") || cw::ieq(tok[2], "m") || cw::ieq(tok[2], "meters")) {
         if (tok.size() < 6) {
           return Error::ParseError;
         }
@@ -542,7 +531,7 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
       }
       continue;
     }
-    if (ieq(cmd, "entity_vel")) {
+    if (cw::ieq(cmd, "entity_vel")) {
       if (tok.size() < 5) {
         return Error::ParseError;
       }
@@ -559,7 +548,7 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
       e->velocity = {static_cast<float>(vx), static_cast<float>(vy), static_cast<float>(vz)};
       continue;
     }
-    if (ieq(cmd, "entity_att")) {
+    if (cw::ieq(cmd, "entity_att")) {
       if (tok.size() < 5) {
         return Error::ParseError;
       }
@@ -579,7 +568,7 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
       continue;
     }
 
-    if (ieq(cmd, "entity_id")) {
+    if (cw::ieq(cmd, "entity_id")) {
       if (tok.size() < 3) {
         return Error::ParseError;
       }
@@ -590,7 +579,7 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
       e->external_id = tok[2];
       continue;
     }
-    if (ieq(cmd, "entity_faction")) {
+    if (cw::ieq(cmd, "entity_faction")) {
       if (tok.size() < 3) {
         return Error::ParseError;
       }
@@ -601,7 +590,7 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
       e->faction = tok[2];
       continue;
     }
-    if (ieq(cmd, "entity_variant")) {
+    if (cw::ieq(cmd, "entity_variant")) {
       if (tok.size() < 3) {
         return Error::ParseError;
       }
@@ -612,7 +601,7 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
       e->variant_ref = tok[2];
       continue;
     }
-    if (ieq(cmd, "entity_icon2d")) {
+    if (cw::ieq(cmd, "entity_icon2d")) {
       if (tok.size() < 3) {
         return Error::ParseError;
       }
@@ -623,7 +612,7 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
       e->icon_2d_path = tok[2];
       continue;
     }
-    if (ieq(cmd, "entity_color")) {
+    if (cw::ieq(cmd, "entity_color")) {
       if (tok.size() < 3) {
         return Error::ParseError;
       }
@@ -658,7 +647,7 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
       }
       continue;
     }
-    if (ieq(cmd, "entity_model3d")) {
+    if (cw::ieq(cmd, "entity_model3d")) {
       if (tok.size() < 3) {
         return Error::ParseError;
       }
@@ -669,7 +658,7 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
       e->model_3d_path = tok[2];
       continue;
     }
-    if (ieq(cmd, "entity_attr")) {
+    if (cw::ieq(cmd, "entity_attr")) {
       if (tok.size() < 4) {
         return Error::ParseError;
       }
@@ -680,7 +669,7 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
       e->platform_attributes.push_back({tok[2], join_tokens(tok, 3)});
       continue;
     }
-    if (ieq(cmd, "entity_mparam")) {
+    if (cw::ieq(cmd, "entity_mparam")) {
       if (tok.size() < 5) {
         return Error::ParseError;
       }
@@ -705,7 +694,7 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
       mount->params.push_back({tok[3], join_tokens(tok, 4)});
       continue;
     }
-    if (ieq(cmd, "entity_script")) {
+    if (cw::ieq(cmd, "entity_script")) {
       if (tok.size() < 4) {
         return Error::ParseError;
       }
@@ -715,16 +704,16 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
       }
       const std::string& kind_tok = tok[2];
       ScriptBindingDesc sb;
-      if (ieq(kind_tok, "lua") || ieq(kind_tok, "lua_script")) {
+      if (cw::ieq(kind_tok, "lua") || cw::ieq(kind_tok, "lua_script")) {
         sb.kind = ScriptBindingDesc::Kind::Lua;
-      } else if (ieq(kind_tok, "blueprint") || ieq(kind_tok, "bp")) {
+      } else if (cw::ieq(kind_tok, "blueprint") || cw::ieq(kind_tok, "bp")) {
         sb.kind = ScriptBindingDesc::Kind::Blueprint;
       } else {
         return Error::ParseError;
       }
       sb.resource_path = tok[3];
       if (sb.kind == ScriptBindingDesc::Kind::Lua) {
-        if (tok.size() >= 6 && ieq(tok[4], "entry")) {
+        if (tok.size() >= 6 && cw::ieq(tok[4], "entry")) {
           sb.entry_symbol = tok[5];
         }
       }
@@ -732,7 +721,7 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
       continue;
     }
 
-    if (ieq(cmd, "route")) {
+    if (cw::ieq(cmd, "route")) {
       if (tok.size() < 3) {
         return Error::ParseError;
       }
@@ -742,7 +731,7 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
       out.routes.push_back(std::move(r));
       continue;
     }
-    if (ieq(cmd, "route_pt")) {
+    if (cw::ieq(cmd, "route_pt")) {
       if (tok.size() < 5) {
         return Error::ParseError;
       }
@@ -766,7 +755,7 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
                                              static_cast<float>(z)});
       continue;
     }
-    if (ieq(cmd, "route_pt_geo")) {
+    if (cw::ieq(cmd, "route_pt_geo")) {
       if (tok.size() < 5) {
         return Error::ParseError;
       }
@@ -793,7 +782,7 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
       rt->waypoints.push_back(RouteWaypoint{mx, my, mz});
       continue;
     }
-    if (ieq(cmd, "route_attr")) {
+    if (cw::ieq(cmd, "route_attr")) {
       if (tok.size() < 4) {
         return Error::ParseError;
       }
@@ -801,7 +790,7 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
       if (!rt) {
         return Error::ParseError;
       }
-      if (ieq(tok[2], "color")) {
+      if (cw::ieq(tok[2], "color")) {
         if (tok.size() >= 6) {
           unsigned ru = 0;
           unsigned gu = 0;
@@ -827,7 +816,7 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
         } else {
           return Error::ParseError;
         }
-      } else if (ieq(tok[2], "width")) {
+      } else if (cw::ieq(tok[2], "width")) {
         if (tok.size() < 4) {
           return Error::ParseError;
         }
@@ -843,7 +832,7 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
       continue;
     }
 
-    if (ieq(cmd, "airspace_box")) {
+    if (cw::ieq(cmd, "airspace_box")) {
       if (tok.size() < 8) {
         return Error::ParseError;
       }
@@ -861,7 +850,7 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
       out.airspaces.push_back(std::move(a));
       continue;
     }
-    if (ieq(cmd, "airspace_box_geo")) {
+    if (cw::ieq(cmd, "airspace_box_geo")) {
       if (tok.size() < 8) {
         return Error::ParseError;
       }
@@ -892,7 +881,7 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
       out.airspaces.push_back(std::move(a));
       continue;
     }
-    if (ieq(cmd, "airspace_poly")) {
+    if (cw::ieq(cmd, "airspace_poly")) {
       if (tok.size() < 2) {
         return Error::ParseError;
       }
@@ -902,7 +891,7 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
       out.airspaces.push_back(std::move(a));
       continue;
     }
-    if (ieq(cmd, "ap_vert")) {
+    if (cw::ieq(cmd, "ap_vert")) {
       if (tok.size() < 5) {
         return Error::ParseError;
       }
@@ -919,7 +908,7 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
       a->polygon.push_back({static_cast<float>(x), static_cast<float>(y), static_cast<float>(z)});
       continue;
     }
-    if (ieq(cmd, "ap_vert_geo")) {
+    if (cw::ieq(cmd, "ap_vert_geo")) {
       if (tok.size() < 5) {
         return Error::ParseError;
       }
@@ -940,7 +929,7 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
       a->polygon.push_back({mx, my, mz});
       continue;
     }
-    if (ieq(cmd, "air_attr")) {
+    if (cw::ieq(cmd, "air_attr")) {
       if (tok.size() < 4) {
         return Error::ParseError;
       }
@@ -952,7 +941,7 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
       continue;
     }
 
-    if (ieq(cmd, "comm_node")) {
+    if (cw::ieq(cmd, "comm_node")) {
       if (tok.size() < 2) {
         return Error::ParseError;
       }
@@ -961,7 +950,7 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
       std::unordered_map<std::string, double> f;
       std::unordered_map<std::string, std::string> s;
       std::size_t i = 2;
-      if (i + 1 < tok.size() && ieq(tok[i], "entity")) {
+      if (i + 1 < tok.size() && cw::ieq(tok[i], "entity")) {
         n.bound_entity = tok[i + 1];
         i += 2;
       }
@@ -980,7 +969,7 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
       out.comm_nodes.push_back(std::move(n));
       continue;
     }
-    if (ieq(cmd, "comm_link")) {
+    if (cw::ieq(cmd, "comm_link")) {
       if (tok.size() < 3) {
         return Error::ParseError;
       }

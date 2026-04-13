@@ -1,5 +1,6 @@
 #pragma once
 
+#include "cw/engine/entity_record.hpp"
 #include "cw/engine/situation.hpp"
 #include "cw/error.hpp"
 #include "cw/scenario/scenario.hpp"
@@ -63,40 +64,11 @@ class Engine {
   }
 
  private:
-  struct EntityRecord {
-    EntityId id = 0;
-    std::string external_id;
-    std::string name;
-    std::string faction;
-    std::string variant_ref;
-    std::string icon_2d_path;
-    std::string model_3d_path;
-    bool has_display_color = false;
-    float display_color_r = 1.F;
-    float display_color_g = 1.F;
-    float display_color_b = 1.F;
-    std::vector<std::pair<std::string, std::string>> platform_attributes;
-    std::vector<cw::scenario::ModelMountDesc> mounts;
-    std::optional<cw::scenario::ScriptBindingDesc> script;
-    cw::math::Vec3 position{};
-    cw::math::Vec3 velocity{};
-    cw::math::Vec3 angular_velocity{};
-    float yaw_deg = 0.F;
-    float pitch_deg = 0.F;
-    float roll_deg = 0.F;
-    /// 来自 signature 挂载参数 `rcs_m2`，供 sensor MVP。
-    float radar_rcs_m2 = 10.F;
-    /// mover 参数 `route=<route_id>`，空表示不跟航线。
-    std::string mover_route_id;
-    std::size_t mover_wp_index = 0;
-    /// `entity_mparam mover kind`（或 `pattern`），如 `3dof`、`stub`；默认三自由度。
-    std::string mover_kind;
-  };
-
   static bool has_model(const EntityRecord& e, ModelKind k);
   static const cw::scenario::ModelMountDesc* find_mount(const EntityRecord& e, ModelKind k);
 
   void pre_tick();
+  /// 单类模型一轮；`Sensor` 分支刷新 `snapshot_.sensor_detections`（由 `aggregate_situation` 末尾调用）。
   void run_model_pass(ModelKind k);
   void run_mover_step(float dt);
   void compute_sensor_detections();

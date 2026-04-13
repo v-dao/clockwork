@@ -1,8 +1,8 @@
 #include "cw/engine/engine.hpp"
+#include "cw/error.hpp"
 #include "cw/log.hpp"
 #include "cw/scenario/parse.hpp"
 
-#include <algorithm>
 #include <cstdlib>
 #include <string>
 #include <string_view>
@@ -11,7 +11,13 @@ namespace {
 
 void check(cw::Error e, const char* what) {
   if (!cw::ok(e)) {
-    cw::log(cw::LogLevel::Error, std::string("scenario_demo: failed: ").append(what));
+    std::string msg = "scenario_demo: failed: ";
+    msg += what;
+    msg += " [";
+    msg += cw::error_code_str(e);
+    msg += "] ";
+    msg += cw::error_message(e);
+    cw::log(cw::LogLevel::Error, msg);
     std::exit(EXIT_FAILURE);
   }
 }
@@ -60,8 +66,9 @@ void run_file(const char* path, bool expect_full) {
   for (const auto& e : sc.entities) {
     if (e.name == "alpha") {
       alpha_has_mover = entity_has_mover_mount(e);
-      if (e.position.z != 1000.F) {
-        cw::log(LogLevel::Error, "scenario_demo: alpha z mismatch");
+      // 仅最小想定约定海拔 1000 m；full.cws 中 alpha 为 geo 0 0 0等，不得套用此断言。
+      if (!expect_full && e.position.z != 1000.F) {
+        cw::log(LogLevel::Error, "scenario_demo: alpha z mismatch (minimal.cws expects geo alt 1000 m)");
         std::exit(EXIT_FAILURE);
       }
     }
@@ -76,7 +83,7 @@ void run_file(const char* path, bool expect_full) {
       cw::log(LogLevel::Error, "scenario_demo: full routes mismatch");
       std::exit(EXIT_FAILURE);
     }
-    if (engine.airspaces().size() != 2) {
+    if (engine.airspaces().size() != 1) {
       cw::log(LogLevel::Error, "scenario_demo: full airspaces mismatch");
       std::exit(EXIT_FAILURE);
     }

@@ -1,42 +1,41 @@
 #include "cw/engine/engine.hpp"
 
 #include "cw/ecs/entity_coordinate_system.hpp"
+#include "cw/log.hpp"
+#include "cw/math/constants.hpp"
 #include "cw/motion/motion_model.hpp"
+#include "cw/string_match.hpp"
 #include "cw/vec3.hpp"
 
 #include <algorithm>
-#include <cctype>
 #include <cmath>
-#include <string_view>
+#include <cstdio>
 #include <cstdlib>
+#include <string_view>
 #include <utility>
 
 namespace cw::engine {
 
 namespace {
 
-/// 阶段 3：与架构一致的调度；mover 在 sensor 之前，便于同帧用更新后位姿做探测。
+/// 每步内模型调度顺序（**不含** `Sensor`）。
+/// `Sensor` 在 `aggregate_situation()` 末尾通过 `run_model_pass(Sensor)` 执行：此时本帧 `Mover` 已更新位姿，
+/// 且 `step()` 在写入快照前已递增 `sim_time_`，探测列表与 `snapshot_.sim_time` 一致；仅调用 `aggregate_situation`
+///（如 `apply_scenario` / `start`）时也会走同一通道刷新探测。
 constexpr ModelKind kModelPassOrder[] = {ModelKind::Comdevice, ModelKind::Processor, ModelKind::Weapon,
-                                         ModelKind::Signature, ModelKind::Mover, ModelKind::Sensor};
+                                         ModelKind::Signature, ModelKind::Mover};
 
 constexpr float kWaypointArriveM = 10.F;
 
-bool key_ieq(std::string_view a, std::string_view b) {
-  if (a.size() != b.size()) {
-    return false;
-  }
-  for (std::size_t i = 0; i < a.size(); ++i) {
-    if (std::tolower(static_cast<unsigned char>(a[i])) !=
-        std::tolower(static_cast<unsigned char>(b[i]))) {
-      return false;
-    }
-  }
-  return true;
+void log_engine_fail(const char* operation, cw::Error err, EngineState s) {
+  char ctx[144];
+  std::snprintf(ctx, sizeof(ctx), "%s(state=%s)", operation, engine_state_name(s));
+  cw::log_error(ctx, err);
 }
 
 std::string param_str(const cw::scenario::ModelMountDesc& m, const char* key) {
   for (const auto& p : m.params) {
-    if (key_ieq(p.first, key)) {
+    if (cw::ieq(p.first, key)) {
       return p.second;
     }
   }
@@ -73,14 +72,14 @@ bool in_sensor_fov(cw::math::Vec3 pos_obs, cw::math::Vec3 forward_obs, cw::math:
   }
   to = cw::math::scale(to, 1.F / dist);
   const float c = std::clamp(cw::math::dot(forward, to), -1.F, 1.F);
-  const float ang_deg = std::acos(c) * 180.F / 3.14159265F;
+  const float ang_deg = std::acos(c) * 180.F / cw::math::kPiF;
   return ang_deg <= fov_deg * 0.5F;
 }
 
 }  // namespace
 
 bool Engine::has_model(const EntityRecord& e, ModelKind k) {
-  for (const auto& m : e.mounts) {
+  for (const auto& m : e.assembly.mounts) {
     if (m.kind == k) {
       return true;
     }
@@ -89,7 +88,7 @@ bool Engine::has_model(const EntityRecord& e, ModelKind k) {
 }
 
 const cw::scenario::ModelMountDesc* Engine::find_mount(const EntityRecord& e, ModelKind k) {
-  for (const auto& m : e.mounts) {
+  for (const auto& m : e.assembly.mounts) {
     if (m.kind == k) {
       return &m;
     }
@@ -98,19 +97,37 @@ const cw::scenario::ModelMountDesc* Engine::find_mount(const EntityRecord& e, Mo
 }
 
 void Engine::init_entity_runtime_fields(EntityRecord& rec) {
-  rec.radar_rcs_m2 = 10.F;
-  rec.mover_route_id.clear();
-  rec.mover_wp_index = 0;
+  rec.signature_cache.radar_rcs_m2 = 10.F;
+  rec.mover_cache.route_id.clear();
+  rec.mover_cache.route_wp_index = 0;
+  rec.mover_cache.kind.clear();
+  rec.comdevice_cache = {};
+  rec.weapon_cache = {};
+
   if (const auto* sig = Engine::find_mount(rec, ModelKind::Signature)) {
-    rec.radar_rcs_m2 = param_float(*sig, "rcs_m2", 10.F);
+    rec.signature_cache.radar_rcs_m2 = param_float(*sig, "rcs_m2", 10.F);
   }
   if (const auto* mv = Engine::find_mount(rec, ModelKind::Mover)) {
-    rec.mover_route_id = param_str(*mv, "route");
+    rec.mover_cache.route_id = param_str(*mv, "route");
     std::string mk = param_str(*mv, "kind");
     if (mk.empty()) {
       mk = param_str(*mv, "pattern");
     }
-    rec.mover_kind = mk.empty() ? std::string("3dof") : std::move(mk);
+    rec.mover_cache.kind = mk.empty() ? std::string("3dof") : std::move(mk);
+  }
+  if (const auto* cd = Engine::find_mount(rec, ModelKind::Comdevice)) {
+    rec.comdevice_cache.bound_node_id = param_str(*cd, "node_id");
+  }
+  if (const auto* wp = Engine::find_mount(rec, ModelKind::Weapon)) {
+    float rounds = param_float(*wp, "rounds", 0.F);
+    if (rounds < 0.F || !std::isfinite(rounds)) {
+      rounds = 0.F;
+    }
+    rec.weapon_cache.rounds_ready = static_cast<std::size_t>(rounds);
+    const float mag = param_float(*wp, "magazine", -1.F);
+    if (mag >= 0.F && std::isfinite(mag) && rec.weapon_cache.rounds_ready == 0) {
+      rec.weapon_cache.rounds_ready = static_cast<std::size_t>(mag);
+    }
   }
 }
 
@@ -129,7 +146,8 @@ void Engine::set_fixed_step(double dt_seconds) {
 
 Error Engine::initialize() {
   if (state_ == EngineState::Running || state_ == EngineState::Paused) {
-    return Error::InvalidArgument;
+    log_engine_fail("Engine::initialize", Error::WrongState, state_);
+    return Error::WrongState;
   }
   entities_.clear();
   routes_.clear();
@@ -145,7 +163,8 @@ Error Engine::initialize() {
 
 Error Engine::start() {
   if (state_ != EngineState::Ready && state_ != EngineState::Paused) {
-    return Error::InvalidArgument;
+    log_engine_fail("Engine::start", Error::WrongState, state_);
+    return Error::WrongState;
   }
   state_ = EngineState::Running;
   aggregate_situation();
@@ -154,7 +173,8 @@ Error Engine::start() {
 
 Error Engine::pause() {
   if (state_ != EngineState::Running) {
-    return Error::InvalidArgument;
+    log_engine_fail("Engine::pause", Error::WrongState, state_);
+    return Error::WrongState;
   }
   state_ = EngineState::Paused;
   aggregate_situation();
@@ -163,7 +183,8 @@ Error Engine::pause() {
 
 Error Engine::end() {
   if (state_ == EngineState::Uninitialized) {
-    return Error::InvalidArgument;
+    log_engine_fail("Engine::end", Error::WrongState, state_);
+    return Error::WrongState;
   }
   state_ = EngineState::Stopped;
   aggregate_situation();
@@ -172,6 +193,7 @@ Error Engine::end() {
 
 Error Engine::set_time_scale(double scale) {
   if (!(scale > 0.0) || !std::isfinite(scale)) {
+    log_engine_fail("Engine::set_time_scale", Error::InvalidArgument, state_);
     return Error::InvalidArgument;
   }
   time_scale_ = scale;
@@ -181,7 +203,8 @@ Error Engine::set_time_scale(double scale) {
 
 Error Engine::save_snapshot() {
   if (federated_) {
-    return Error::InvalidArgument;
+    cw::log_error("Engine::save_snapshot(federated=true)", Error::NotAllowedWhenFederated);
+    return Error::NotAllowedWhenFederated;
   }
   StateCheckpoint cp;
   cp.fixed_dt = fixed_dt_;
@@ -200,9 +223,11 @@ Error Engine::save_snapshot() {
 
 Error Engine::restore_snapshot() {
   if (federated_) {
-    return Error::InvalidArgument;
+    cw::log_error("Engine::restore_snapshot(federated=true)", Error::NotAllowedWhenFederated);
+    return Error::NotAllowedWhenFederated;
   }
   if (!checkpoint_.has_value()) {
+    log_engine_fail("Engine::restore_snapshot", Error::NoSnapshot, state_);
     return Error::NoSnapshot;
   }
   const StateCheckpoint& cp = *checkpoint_;
@@ -222,10 +247,12 @@ Error Engine::restore_snapshot() {
 
 Error Engine::apply_scenario(const cw::scenario::Scenario& sc) {
   if (state_ != EngineState::Ready) {
-    return Error::InvalidArgument;
+    log_engine_fail("Engine::apply_scenario", Error::WrongState, state_);
+    return Error::WrongState;
   }
   if (sc.version != 1 && sc.version != 2) {
-    return Error::InvalidArgument;
+    cw::log_error("Engine::apply_scenario(unsupported scenario version)", Error::UnsupportedScenarioVersion);
+    return Error::UnsupportedScenarioVersion;
   }
   entities_.clear();
   routes_ = sc.routes;
@@ -236,26 +263,26 @@ Error Engine::apply_scenario(const cw::scenario::Scenario& sc) {
   for (const auto& e : sc.entities) {
     EntityRecord rec;
     rec.id = next_id_++;
-    rec.external_id = e.external_id;
-    rec.name = e.name;
-    rec.faction = e.faction;
-    rec.variant_ref = e.variant_ref;
-    rec.icon_2d_path = e.icon_2d_path;
-    rec.model_3d_path = e.model_3d_path;
-    rec.has_display_color = e.has_display_color;
-    rec.display_color_r = e.display_color_r;
-    rec.display_color_g = e.display_color_g;
-    rec.display_color_b = e.display_color_b;
-    rec.platform_attributes = e.platform_attributes;
-    rec.position = e.position;
-    rec.yaw_deg = e.yaw_deg;
-    rec.pitch_deg = e.pitch_deg;
-    rec.roll_deg = e.roll_deg;
-    rec.velocity = cw::ecs::EntityCoordinateSystem::body_velocity_to_world_mercator(
+    rec.assembly.external_id = e.external_id;
+    rec.assembly.name = e.name;
+    rec.assembly.faction = e.faction;
+    rec.assembly.variant_ref = e.variant_ref;
+    rec.assembly.icon_2d_path = e.icon_2d_path;
+    rec.assembly.model_3d_path = e.model_3d_path;
+    rec.assembly.has_display_color = e.has_display_color;
+    rec.assembly.display_color_r = e.display_color_r;
+    rec.assembly.display_color_g = e.display_color_g;
+    rec.assembly.display_color_b = e.display_color_b;
+    rec.assembly.platform_attributes = e.platform_attributes;
+    rec.kin.position = e.position;
+    rec.kin.yaw_deg = e.yaw_deg;
+    rec.kin.pitch_deg = e.pitch_deg;
+    rec.kin.roll_deg = e.roll_deg;
+    rec.kin.velocity = cw::ecs::EntityCoordinateSystem::body_velocity_to_world_mercator(
         e.velocity, e.yaw_deg, e.pitch_deg, e.roll_deg);
-    rec.angular_velocity = {};
-    rec.mounts = e.mounts;
-    rec.script = e.script;
+    rec.kin.angular_velocity = {};
+    rec.assembly.mounts = e.mounts;
+    rec.assembly.script = e.script;
     init_entity_runtime_fields(rec);
     entities_.push_back(std::move(rec));
   }
@@ -281,15 +308,16 @@ Error Engine::reset_with_scenario(const cw::scenario::Scenario& sc) {
 
 Error Engine::add_entity(std::string name, std::vector<ModelKind> models) {
   if (state_ != EngineState::Ready) {
-    return Error::InvalidArgument;
+    log_engine_fail("Engine::add_entity", Error::WrongState, state_);
+    return Error::WrongState;
   }
   EntityRecord rec;
   rec.id = next_id_++;
-  rec.name = std::move(name);
+  rec.assembly.name = std::move(name);
   for (ModelKind mk : models) {
     cw::scenario::ModelMountDesc md;
     md.kind = mk;
-    rec.mounts.push_back(std::move(md));
+    rec.assembly.mounts.push_back(std::move(md));
   }
   init_entity_runtime_fields(rec);
   entities_.push_back(std::move(rec));
@@ -311,13 +339,13 @@ void Engine::run_mover_step(float dt) {
     const bool track_pitch = mv && param_str(*mv, "track_pitch") == "1";
 
     cw::motion::MoverRuntimeState st{};
-    st.position = e.position;
-    st.velocity = e.velocity;
-    st.yaw_deg = e.yaw_deg;
-    st.pitch_deg = e.pitch_deg;
-    st.roll_deg = e.roll_deg;
-    st.route_id = e.mover_route_id;
-    st.route_wp_index = e.mover_wp_index;
+    st.position = e.kin.position;
+    st.velocity = e.kin.velocity;
+    st.yaw_deg = e.kin.yaw_deg;
+    st.pitch_deg = e.kin.pitch_deg;
+    st.roll_deg = e.kin.roll_deg;
+    st.route_id = e.mover_cache.route_id;
+    st.route_wp_index = e.mover_cache.route_wp_index;
 
     cw::motion::MoverStepInput in{};
     in.dt = dt;
@@ -327,15 +355,15 @@ void Engine::run_mover_step(float dt) {
     in.track_yaw_from_velocity = track_yaw;
     in.track_pitch_from_velocity = track_pitch;
 
-    const cw::motion::MotionModel& model = cw::motion::motion_model_for_kind(e.mover_kind);
+    const cw::motion::MotionModel& model = cw::motion::motion_model_for_kind(e.mover_cache.kind);
     model.apply_dynamics(st, in);
 
-    e.velocity = st.velocity;
-    e.yaw_deg = st.yaw_deg;
-    e.pitch_deg = st.pitch_deg;
-    e.roll_deg = st.roll_deg;
-    e.mover_wp_index = st.route_wp_index;
-    e.position = e.position + cw::math::scale(e.velocity, dt);
+    e.kin.velocity = st.velocity;
+    e.kin.yaw_deg = st.yaw_deg;
+    e.kin.pitch_deg = st.pitch_deg;
+    e.kin.roll_deg = st.roll_deg;
+    e.mover_cache.route_wp_index = st.route_wp_index;
+    e.kin.position = e.kin.position + cw::math::scale(e.kin.velocity, dt);
   }
 }
 
@@ -353,6 +381,7 @@ void Engine::run_model_pass(ModelKind k) {
       return;
     }
     case ModelKind::Sensor:
+      compute_sensor_detections();
       return;
   }
 }
@@ -372,21 +401,21 @@ void Engine::compute_sensor_detections() {
       if (tgt.id == obs.id) {
         continue;
       }
-      const cw::math::Vec3 d = tgt.position - obs.position;
+      const cw::math::Vec3 d = tgt.kin.position - obs.kin.position;
       const float dist = cw::math::length(d);
       if (dist > range_m || !std::isfinite(dist)) {
         continue;
       }
       const cw::math::Vec3 fwd = cw::ecs::EntityCoordinateSystem::body_forward_world_mercator(
-          obs.yaw_deg, obs.pitch_deg, obs.roll_deg);
-      if (!in_sensor_fov(obs.position, fwd, tgt.position, fov_deg)) {
+          obs.kin.yaw_deg, obs.kin.pitch_deg, obs.kin.roll_deg);
+      if (!in_sensor_fov(obs.kin.position, fwd, tgt.kin.position, fov_deg)) {
         continue;
       }
       SensorDetection det;
       det.observer_id = obs.id;
       det.target_id = tgt.id;
       det.range_m = dist;
-      det.reported_rcs_m2 = tgt.radar_rcs_m2;
+      det.reported_rcs_m2 = tgt.signature_cache.radar_rcs_m2;
       snapshot_.sensor_detections.push_back(det);
     }
   }
@@ -401,25 +430,25 @@ void Engine::aggregate_situation() {
   for (const auto& e : entities_) {
     EntitySituation s;
     s.id = e.id;
-    s.external_id = e.external_id;
-    s.name = e.name;
-    s.faction = e.faction;
-    s.variant_ref = e.variant_ref;
-    s.icon_2d_path = e.icon_2d_path;
-    s.model_3d_path = e.model_3d_path;
-    s.has_display_color = e.has_display_color;
-    s.display_color_r = e.display_color_r;
-    s.display_color_g = e.display_color_g;
-    s.display_color_b = e.display_color_b;
-    s.position = e.position;
-    s.velocity = e.velocity;
-    s.angular_velocity = e.angular_velocity;
-    s.yaw_deg = e.yaw_deg;
-    s.pitch_deg = e.pitch_deg;
-    s.roll_deg = e.roll_deg;
+    s.external_id = e.assembly.external_id;
+    s.name = e.assembly.name;
+    s.faction = e.assembly.faction;
+    s.variant_ref = e.assembly.variant_ref;
+    s.icon_2d_path = e.assembly.icon_2d_path;
+    s.model_3d_path = e.assembly.model_3d_path;
+    s.has_display_color = e.assembly.has_display_color;
+    s.display_color_r = e.assembly.display_color_r;
+    s.display_color_g = e.assembly.display_color_g;
+    s.display_color_b = e.assembly.display_color_b;
+    s.position = e.kin.position;
+    s.velocity = e.kin.velocity;
+    s.angular_velocity = e.kin.angular_velocity;
+    s.yaw_deg = e.kin.yaw_deg;
+    s.pitch_deg = e.kin.pitch_deg;
+    s.roll_deg = e.kin.roll_deg;
     snapshot_.entities.push_back(std::move(s));
   }
-  compute_sensor_detections();
+  run_model_pass(ModelKind::Sensor);
 }
 
 void Engine::step() {

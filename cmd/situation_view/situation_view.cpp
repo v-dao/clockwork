@@ -11,6 +11,7 @@
 #include <GL/gl.h>
 
 #include "cw/engine/engine.hpp"
+#include "cw/error.hpp"
 #include "cw/log.hpp"
 #include "cw/render/gl_window.hpp"
 #include "cw/render/globe_program.hpp"
@@ -32,10 +33,13 @@ namespace {
 
 void check(cw::Error e, const char* what) {
   if (!cw::ok(e)) {
-    cw::log(cw::LogLevel::Error, std::string("situation_view: ")
-                                    .append(what)
-                                    .append(" err=")
-                                    .append(std::to_string(static_cast<int>(e))));
+    std::string msg = "situation_view: ";
+    msg += what;
+    msg += " [";
+    msg += cw::error_code_str(e);
+    msg += "] ";
+    msg += cw::error_message(e);
+    cw::log(cw::LogLevel::Error, msg);
     std::exit(EXIT_FAILURE);
   }
 }

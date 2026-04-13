@@ -1,0 +1,5 @@
+# scenario_demo 默认首条想定：单实体 + mover + 海拔1000 m
+version 1
+
+entity alpha mover
+entity_pos alpha geo 0 0 1000
