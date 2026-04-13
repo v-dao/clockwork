@@ -165,7 +165,7 @@ void Win32SituationChrome::on_menu_command(unsigned cmd) {
 
 void Win32SituationChrome::install_view_menu(cw::render::GlWindow& win, SituationViewShell& shell) {
   shell_ = &shell;
-  hwnd_main_ = win.native_window_handle();
+  hwnd_main_ = win.native_menu_host_handle();
   HMENU h_bar = CreateMenu();
   HMENU h_view = CreateMenu();
   hmenu_view_ = h_view;
@@ -197,7 +197,7 @@ void Win32SituationChrome::install_view_menu(cw::render::GlWindow& win, Situatio
 
 void Win32SituationChrome::install_simulation_menu(cw::render::GlWindow& win, SituationViewShell& shell) {
   shell_ = &shell;
-  hwnd_main_ = win.native_window_handle();
+  hwnd_main_ = win.native_menu_host_handle();
   HMENU h_bar = GetMenu(static_cast<HWND>(hwnd_main_));
   if (h_bar == nullptr) {
     return;

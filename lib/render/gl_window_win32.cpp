@@ -66,59 +66,8 @@ GlWindowWin32* from_hwnd(HWND hwnd, UINT msg, LPARAM lParam) {
   return reinterpret_cast<GlWindowWin32*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
 }
 
-LRESULT CALLBACK GlWindowWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-  GlWindowWin32* self = from_hwnd(hwnd, msg, lParam);
-  if (self == nullptr) {
-    return DefWindowProcW(hwnd, msg, wParam, lParam);
-  }
-  switch (msg) {
-    case WM_CLOSE:
-      self->platform_notify_close_request();
-      return 0;
-    case WM_DESTROY:
-      PostQuitMessage(0);
-      return 0;
-    case WM_SIZE: {
-      int cw = LOWORD(lParam);
-      int ch = HIWORD(lParam);
-      self->platform_notify_client_size(cw, ch);
-      return 0;
-    }
-    case WM_MOUSEWHEEL: {
-      self->add_wheel_delta(static_cast<int>(GET_WHEEL_DELTA_WPARAM(wParam)));
-      return 0;
-    }
-    case WM_LBUTTONDOWN: {
-      self->platform_set_mouse_client(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
-      self->platform_set_left_button(true);
-      SetCapture(hwnd);
-      return 0;
-    }
-    case WM_LBUTTONUP: {
-      self->platform_set_mouse_client(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
-      self->platform_set_left_button(false);
-      if (GetCapture() == hwnd) {
-        ReleaseCapture();
-      }
-      return 0;
-    }
-    case WM_MOUSEMOVE: {
-      self->platform_set_mouse_client(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
-      return 0;
-    }
-    case WM_COMMAND: {
-      self->notify_menu_command(static_cast<unsigned>(LOWORD(wParam)));
-      return 0;
-    }
-    case WM_ERASEBKGND:
-      return 1;
-    default:
-      break;
-  }
-  return DefWindowProcW(hwnd, msg, wParam, lParam);
-}
-
-constexpr wchar_t kClassName[] = L"ClockworkGlWindow";
+constexpr wchar_t kFrameClassName[] = L"ClockworkGlFrame";
+constexpr wchar_t kClientClassName[] = L"ClockworkGlClient";
 
 void ensure_process_dpi_aware() {
   static bool done = false;
@@ -142,71 +91,145 @@ void ensure_process_dpi_aware() {
 
 }  // namespace
 
+LRESULT CALLBACK GlWindowFrameWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+  GlWindowWin32* self = from_hwnd(hwnd, msg, lParam);
+  if (self == nullptr) {
+    return DefWindowProcW(hwnd, msg, wParam, lParam);
+  }
+  switch (msg) {
+    case WM_CLOSE:
+      self->platform_notify_close_request();
+      return 0;
+    case WM_DESTROY:
+      PostQuitMessage(0);
+      return 0;
+    case WM_SIZE: {
+      const int cw = std::max(1, static_cast<int>(LOWORD(lParam)));
+      const int ch = std::max(1, static_cast<int>(HIWORD(lParam)));
+      if (self->hwnd_client_ != nullptr) {
+        SetWindowPos(static_cast<HWND>(self->hwnd_client_), nullptr, 0, 0, cw, ch, SWP_NOZORDER | SWP_NOACTIVATE);
+      }
+      self->platform_notify_client_size(cw, ch);
+      return 0;
+    }
+    case WM_COMMAND: {
+      self->notify_menu_command(static_cast<unsigned>(LOWORD(wParam)));
+      return 0;
+    }
+    default:
+      break;
+  }
+  return DefWindowProcW(hwnd, msg, wParam, lParam);
+}
+
+LRESULT CALLBACK GlWindowClientWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+  GlWindowWin32* self = from_hwnd(hwnd, msg, lParam);
+  if (self == nullptr) {
+    return DefWindowProcW(hwnd, msg, wParam, lParam);
+  }
+  switch (msg) {
+    case WM_MOUSEWHEEL: {
+      self->add_wheel_delta(static_cast<int>(GET_WHEEL_DELTA_WPARAM(wParam)));
+      return 0;
+    }
+    case WM_LBUTTONDOWN: {
+      self->platform_set_mouse_client(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+      self->platform_set_left_button(true);
+      SetCapture(hwnd);
+      return 0;
+    }
+    case WM_LBUTTONUP: {
+      self->platform_set_mouse_client(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+      self->platform_set_left_button(false);
+      if (GetCapture() == hwnd) {
+        ReleaseCapture();
+      }
+      return 0;
+    }
+    case WM_MOUSEMOVE: {
+      self->platform_set_mouse_client(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+      return 0;
+    }
+    case WM_ERASEBKGND:
+      return 1;
+    default:
+      break;
+  }
+  return DefWindowProcW(hwnd, msg, wParam, lParam);
+}
+
 GlWindowWin32::~GlWindowWin32() { close(); }
 
-bool GlWindowWin32::open(const GlWindowConfig& cfg) {
-  ensure_process_dpi_aware();
-
-  if (open_) {
-    close();
-  }
-  should_close_ = false;
-
-  HINSTANCE inst = GetModuleHandleW(nullptr);
-
-  WNDCLASSW wc{};
-  wc.style = CS_OWNDC;
-  wc.lpfnWndProc = GlWindowWndProc;
-  wc.cbClsExtra = 0;
-  wc.cbWndExtra = 0;
-  wc.hInstance = inst;
-  wc.hIcon = nullptr;
-  wc.hCursor = LoadCursorA(nullptr, IDC_ARROW);
-  wc.hbrBackground = nullptr;
-  wc.lpszMenuName = nullptr;
-  wc.lpszClassName = kClassName;
-  if (RegisterClassW(&wc) == 0) {
-    if (GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
-      return false;
-    }
-  }
-
-  const std::wstring title = utf8_to_wide(cfg.title_utf8);
-
-  RECT r{0, 0, cfg.width, cfg.height};
-  constexpr DWORD style = WS_OVERLAPPEDWINDOW;
-  AdjustWindowRect(&r, style, FALSE);
-
-  HWND hwnd = CreateWindowExW(0, kClassName, title.c_str(), style, CW_USEDEFAULT, CW_USEDEFAULT,
-                              r.right - r.left, r.bottom - r.top, nullptr, nullptr, inst, this);
-  if (hwnd == nullptr) {
+bool GlWindowWin32::create_or_resize_client_child() noexcept {
+  HWND frame = static_cast<HWND>(hwnd_frame_);
+  if (frame == nullptr) {
     return false;
   }
+  RECT cr{};
+  if (GetClientRect(frame, &cr) == 0) {
+    return false;
+  }
+  int cw = std::max(1, static_cast<int>(cr.right - cr.left));
+  int ch = std::max(1, static_cast<int>(cr.bottom - cr.top));
 
-  win_api_ = cfg.window_graphics_api;
-
-  if (win_api_ == GraphicsApi::Vulkan) {
-    hwnd_ = hwnd;
-    hdc_ = nullptr;
-    hglrc_ = nullptr;
-    offscreen_ = std::make_unique<GlOffscreenWin32>();
-    if (!offscreen_->initialize()) {
-      offscreen_.reset();
-      DestroyWindow(hwnd);
-      return false;
-    }
-    open_ = true;
-    ShowWindow(hwnd, SW_SHOWMAXIMIZED);
-    UpdateWindow(hwnd);
-    RECT cr{};
-    GetClientRect(hwnd, &cr);
-    platform_notify_client_size(cr.right - cr.left, cr.bottom - cr.top);
-    return true;
+  if (hwnd_client_ != nullptr) {
+    destroy_client_gl_context();
+    destroy_client_window_only();
   }
 
-  HDC hdc = GetDC(hwnd);
+  HINSTANCE inst = GetModuleHandleW(nullptr);
+  HWND client = CreateWindowExW(0, kClientClassName, L"", WS_CHILD | WS_VISIBLE, 0, 0, cw, ch, frame, nullptr, inst,
+                                this);
+  if (client == nullptr) {
+    return false;
+  }
+  hwnd_client_ = client;
+  return true;
+}
+
+void GlWindowWin32::destroy_client_gl_context() noexcept {
+  HGLRC hglrc = static_cast<HGLRC>(hglrc_);
+  HWND client = static_cast<HWND>(hwnd_client_);
+  HDC hdc = static_cast<HDC>(hdc_);
+  if (hglrc != nullptr) {
+    wglMakeCurrent(nullptr, nullptr);
+    wglDeleteContext(hglrc);
+    hglrc_ = nullptr;
+  }
+  if (client != nullptr && hdc != nullptr) {
+    ReleaseDC(client, hdc);
+  }
+  hdc_ = nullptr;
+}
+
+void GlWindowWin32::destroy_client_window_only() noexcept {
+  if (hwnd_client_ != nullptr) {
+    DestroyWindow(static_cast<HWND>(hwnd_client_));
+    hwnd_client_ = nullptr;
+  }
+}
+
+bool GlWindowWin32::restore_win_api_after_failed_switch(GraphicsApi previous) noexcept {
+  offscreen_.reset();
+  destroy_client_gl_context();
+  destroy_client_window_only();
+  win_api_ = previous;
+  if (!create_or_resize_client_child()) {
+    return false;
+  }
+  if (previous == GraphicsApi::Vulkan) {
+    return init_vulkan_client_branch();
+  }
+  return init_opengl_client_branch();
+}
+
+bool GlWindowWin32::init_opengl_client_branch() noexcept {
+  HWND client = static_cast<HWND>(hwnd_client_);
+  if (client == nullptr) {
+    return false;
+  }
+  HDC hdc = GetDC(client);
   if (hdc == nullptr) {
-    DestroyWindow(hwnd);
     return false;
   }
 
@@ -221,8 +244,7 @@ bool GlWindowWin32::open(const GlWindowConfig& cfg) {
 
   const int pf = ChoosePixelFormat(hdc, &pfd);
   if (pf == 0 || SetPixelFormat(hdc, pf, &pfd) == FALSE) {
-    ReleaseDC(hwnd, hdc);
-    DestroyWindow(hwnd);
+    ReleaseDC(client, hdc);
     return false;
   }
 
@@ -230,14 +252,12 @@ bool GlWindowWin32::open(const GlWindowConfig& cfg) {
   {
     HGLRC temp = wglCreateContext(hdc);
     if (temp == nullptr) {
-      ReleaseDC(hwnd, hdc);
-      DestroyWindow(hwnd);
+      ReleaseDC(client, hdc);
       return false;
     }
     if (wglMakeCurrent(hdc, temp) == FALSE) {
       wglDeleteContext(temp);
-      ReleaseDC(hwnd, hdc);
-      DestroyWindow(hwnd);
+      ReleaseDC(client, hdc);
       return false;
     }
     auto create_attribs = reinterpret_cast<PFN_wglCreateContextAttribsARB>(
@@ -260,30 +280,111 @@ bool GlWindowWin32::open(const GlWindowConfig& cfg) {
       hglrc = wglCreateContext(hdc);
     }
     if (hglrc == nullptr) {
-      ReleaseDC(hwnd, hdc);
-      DestroyWindow(hwnd);
+      ReleaseDC(client, hdc);
       return false;
     }
     if (wglMakeCurrent(hdc, hglrc) == FALSE) {
       wglDeleteContext(hglrc);
-      ReleaseDC(hwnd, hdc);
-      DestroyWindow(hwnd);
+      ReleaseDC(client, hdc);
       return false;
     }
   }
 
-  hwnd_ = hwnd;
   hdc_ = hdc;
   hglrc_ = hglrc;
+  return true;
+}
+
+bool GlWindowWin32::init_vulkan_client_branch() noexcept {
+  hdc_ = nullptr;
+  hglrc_ = nullptr;
+  offscreen_ = std::make_unique<GlOffscreenWin32>();
+  if (!offscreen_->initialize()) {
+    offscreen_.reset();
+    return false;
+  }
+  return true;
+}
+
+bool GlWindowWin32::open(const GlWindowConfig& cfg) {
+  ensure_process_dpi_aware();
+
+  if (open_) {
+    close();
+  }
+  should_close_ = false;
+
+  HINSTANCE inst = GetModuleHandleW(nullptr);
+
+  WNDCLASSW wc_frame{};
+  wc_frame.lpfnWndProc = GlWindowFrameWndProc;
+  wc_frame.hInstance = inst;
+  wc_frame.hCursor = LoadCursorA(nullptr, IDC_ARROW);
+  wc_frame.hbrBackground = nullptr;
+  wc_frame.lpszMenuName = nullptr;
+  wc_frame.lpszClassName = kFrameClassName;
+  if (RegisterClassW(&wc_frame) == 0) {
+    if (GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
+      return false;
+    }
+  }
+
+  WNDCLASSW wc_client{};
+  wc_client.style = CS_OWNDC;
+  wc_client.lpfnWndProc = GlWindowClientWndProc;
+  wc_client.hInstance = inst;
+  wc_client.hCursor = LoadCursorA(nullptr, IDC_ARROW);
+  wc_client.hbrBackground = nullptr;
+  wc_client.lpszMenuName = nullptr;
+  wc_client.lpszClassName = kClientClassName;
+  if (RegisterClassW(&wc_client) == 0) {
+    if (GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
+      return false;
+    }
+  }
+
+  const std::wstring title = utf8_to_wide(cfg.title_utf8);
+
+  RECT r{0, 0, cfg.width, cfg.height};
+  constexpr DWORD style = WS_OVERLAPPEDWINDOW;
+  AdjustWindowRect(&r, style, FALSE);
+
+  HWND frame = CreateWindowExW(0, kFrameClassName, title.c_str(), style, CW_USEDEFAULT, CW_USEDEFAULT,
+                               r.right - r.left, r.bottom - r.top, nullptr, nullptr, inst, this);
+  if (frame == nullptr) {
+    return false;
+  }
+  hwnd_frame_ = frame;
+
+  win_api_ = cfg.window_graphics_api;
+
+  if (!create_or_resize_client_child()) {
+    DestroyWindow(frame);
+    hwnd_frame_ = nullptr;
+    return false;
+  }
+
+  if (win_api_ == GraphicsApi::Vulkan) {
+    if (!init_vulkan_client_branch()) {
+      offscreen_.reset();
+      destroy_client_window_only();
+      DestroyWindow(frame);
+      hwnd_frame_ = nullptr;
+      return false;
+    }
+  } else {
+    if (!init_opengl_client_branch()) {
+      destroy_client_window_only();
+      DestroyWindow(frame);
+      hwnd_frame_ = nullptr;
+      return false;
+    }
+  }
+
   open_ = true;
-
-  ShowWindow(hwnd, SW_SHOWMAXIMIZED);
-  UpdateWindow(hwnd);
-
-  RECT cr{};
-  GetClientRect(hwnd, &cr);
-  platform_notify_client_size(cr.right - cr.left, cr.bottom - cr.top);
-
+  ShowWindow(frame, SW_SHOWMAXIMIZED);
+  UpdateWindow(frame);
+  sync_client_size_from_window();
   return true;
 }
 
@@ -292,25 +393,14 @@ void GlWindowWin32::close() noexcept {
     return;
   }
   offscreen_.reset();
+  destroy_client_gl_context();
+  destroy_client_window_only();
 
-  HGLRC hglrc = static_cast<HGLRC>(hglrc_);
-  HDC hdc = static_cast<HDC>(hdc_);
-  HWND hwnd = static_cast<HWND>(hwnd_);
-
-  if (hglrc != nullptr) {
-    wglMakeCurrent(nullptr, nullptr);
-    wglDeleteContext(hglrc);
+  HWND frame = static_cast<HWND>(hwnd_frame_);
+  if (frame != nullptr) {
+    DestroyWindow(frame);
   }
-  if (hwnd != nullptr && hdc != nullptr) {
-    ReleaseDC(hwnd, hdc);
-  }
-  if (hwnd != nullptr) {
-    DestroyWindow(hwnd);
-  }
-
-  hwnd_ = nullptr;
-  hdc_ = nullptr;
-  hglrc_ = nullptr;
+  hwnd_frame_ = nullptr;
   open_ = false;
 }
 
@@ -335,15 +425,61 @@ void GlWindowWin32::make_current() const noexcept {
 }
 
 void GlWindowWin32::sync_client_size_from_window() noexcept {
-  if (!open_ || hwnd_ == nullptr) {
+  if (!open_ || hwnd_frame_ == nullptr) {
     return;
   }
   RECT cr{};
-  GetClientRect(static_cast<HWND>(hwnd_), &cr);
+  GetClientRect(static_cast<HWND>(hwnd_frame_), &cr);
   platform_notify_client_size(cr.right - cr.left, cr.bottom - cr.top);
 }
 
-void* GlWindowWin32::native_window_handle() const noexcept { return hwnd_; }
+void* GlWindowWin32::native_window_handle() const noexcept { return hwnd_client_; }
+
+void* GlWindowWin32::native_menu_host_handle() const noexcept { return hwnd_frame_; }
+
+bool GlWindowWin32::try_set_window_graphics_api(GraphicsApi api) noexcept {
+  if (!open_ || hwnd_frame_ == nullptr) {
+    return false;
+  }
+  if (api == win_api_) {
+    return true;
+  }
+
+  const GraphicsApi previous = win_api_;
+
+  offscreen_.reset();
+  destroy_client_gl_context();
+
+  if (hwnd_client_ != nullptr) {
+    DestroyWindow(static_cast<HWND>(hwnd_client_));
+    hwnd_client_ = nullptr;
+  }
+
+  win_api_ = api;
+
+  if (!create_or_resize_client_child()) {
+    static_cast<void>(restore_win_api_after_failed_switch(previous));
+    return false;
+  }
+
+  if (win_api_ == GraphicsApi::Vulkan) {
+    if (!init_vulkan_client_branch()) {
+      offscreen_.reset();
+      destroy_client_window_only();
+      static_cast<void>(restore_win_api_after_failed_switch(previous));
+      return false;
+    }
+  } else {
+    if (!init_opengl_client_branch()) {
+      destroy_client_window_only();
+      static_cast<void>(restore_win_api_after_failed_switch(previous));
+      return false;
+    }
+  }
+
+  sync_client_size_from_window();
+  return true;
+}
 
 unsigned GlWindowWin32::create_hud_bitmap_font_lists() noexcept {
   if (win_api_ == GraphicsApi::Vulkan && offscreen_ != nullptr) {

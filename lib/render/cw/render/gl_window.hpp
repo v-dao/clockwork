@@ -67,6 +67,15 @@ class GlWindow {
   /// 原生窗口句柄：Win32 为 `HWND`，其它平台为约定类型指针；无则 `nullptr`。
   [[nodiscard]] virtual void* native_window_handle() const noexcept { return nullptr; }
 
+  /// Win32：承载菜单栏的顶层 `HWND`（方案 B 下与 `native_window_handle` 可能不同）；默认同 `native_window_handle`。
+  [[nodiscard]] virtual void* native_menu_host_handle() const noexcept { return native_window_handle(); }
+
+  /// Win32：在**不销毁**顶层窗口的前提下切换客户区子窗的 OpenGL/Vulkan 后端；其它平台返回 false。
+  [[nodiscard]] virtual bool try_set_window_graphics_api(GraphicsApi api) noexcept {
+    (void)api;
+    return false;
+  }
+
   /// Win32 + Vulkan：离屏 WGL/FBO，用于与 Vulkan 交换链合成；其它配置返回 `nullptr`。
   [[nodiscard]] virtual GlOffscreenWin32* offscreen_gl() noexcept { return nullptr; }
 

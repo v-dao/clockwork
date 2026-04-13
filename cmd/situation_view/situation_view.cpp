@@ -108,36 +108,39 @@ int main(int argc, char** argv) {
     want_api_switch.store(true, std::memory_order_release);
   });
 
-  for (;;) {
-    std::unique_ptr<cw::render::GlWindow> win = cw::render::create_gl_window();
-    cw::render::GlWindowConfig win_cfg{};
-    win_cfg.width = 1280;
-    win_cfg.height = 720;
-    win_cfg.title_utf8 = title.c_str();
-    win_cfg.window_graphics_api = session_api;
-    if (!win->open(win_cfg)) {
-      cw::log(cw::LogLevel::Error, "situation_view: GlWindow::open failed (Windows only in phase 4)");
-      return EXIT_FAILURE;
-    }
+  std::unique_ptr<cw::render::GlWindow> win = cw::render::create_gl_window();
+  cw::render::GlWindowConfig win_cfg{};
+  win_cfg.width = 1280;
+  win_cfg.height = 720;
+  win_cfg.title_utf8 = title.c_str();
+  win_cfg.window_graphics_api = session_api;
+  if (!win->open(win_cfg)) {
+    cw::log(cw::LogLevel::Error, "situation_view: GlWindow::open failed (Windows only in phase 4)");
+    return EXIT_FAILURE;
+  }
 
+  chrome->install_view_menu(*win, shell);
+  if (!map_only) {
+    chrome->set_simulation_targets(&engine, &sc);
+    chrome->install_simulation_menu(*win, shell);
+  }
+
+  for (;;) {
     std::unique_ptr<cw::render::GraphicsDevice> gfx = cw::render::create_graphics_device_for_window(*win);
     if (!gfx) {
-      win->close();
       if (session_api == cw::render::GraphicsApi::Vulkan) {
-        cw::log(cw::LogLevel::Info, "situation_view: Vulkan unavailable, reopening window with OpenGL");
-        session_api = cw::render::GraphicsApi::OpenGL;
-        pending_api = session_api;
-        want_api_switch.store(false, std::memory_order_release);
-        continue;
+        if (win->try_set_window_graphics_api(cw::render::GraphicsApi::OpenGL)) {
+          cw::log(cw::LogLevel::Info, "situation_view: Vulkan unavailable, falling back to OpenGL on same window");
+          session_api = cw::render::GraphicsApi::OpenGL;
+          pending_api = session_api;
+          want_api_switch.store(false, std::memory_order_release);
+          continue;
+        }
       }
+      win->close();
       return EXIT_FAILURE;
     }
 
-    chrome->install_view_menu(*win, shell);
-    if (!map_only) {
-      chrome->set_simulation_targets(&engine, &sc);
-      chrome->install_simulation_menu(*win, shell);
-    }
     win->sync_client_size_from_window();
 
     const bool vulkan_present = (gfx->api() == cw::render::GraphicsApi::Vulkan);
@@ -456,12 +459,22 @@ int main(int argc, char** argv) {
       entity_icons.destroy_all();
     }
     gfx.reset();
-    win->close();
 
-    if (want_api_switch.exchange(false) && pending_api != used_api) {
-      session_api = pending_api;
+    const bool switching =
+        want_api_switch.exchange(false, std::memory_order_acq_rel) && (pending_api != used_api);
+    if (switching) {
+      if (win->try_set_window_graphics_api(pending_api)) {
+        session_api = pending_api;
+        continue;
+      }
+      cw::log(cw::LogLevel::Error,
+              "situation_view: Graphics API switch failed; staying on previous backend");
+      pending_api = session_api;
+      chrome->sync_graphics_api_menu(used_api);
       continue;
     }
+
+    win->close();
     break;
   }
 
