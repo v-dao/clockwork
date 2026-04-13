@@ -2,11 +2,14 @@
 // 请在仓库根目录运行，以便 `scenarios/full.cws` 路径有效。
 
 #include "cw/engine/engine.hpp"
+#include "cw/engine/situation_digest.hpp"
 #include "cw/error.hpp"
 #include "cw/log.hpp"
 #include "cw/scenario/parse.hpp"
 
 #include <cmath>
+#include <cstdio>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -283,6 +286,163 @@ bool test_apply_with_comdevice_weapon_mounts() {
   return true;
 }
 
+bool test_deterministic_situation_digest() {
+  constexpr const char* kCase = "deterministic_situation_digest";
+  constexpr std::string_view kText =
+      "version 1\n"
+      "entity obs sensor mover signature\n"
+      "entity tgt signature mover\n"
+      "entity_mparam obs sensor range_m 80000\n"
+      "entity_mparam tgt signature rcs_m2 25\n"
+      "entity_pos obs geo 0 0 1000\n"
+      "entity_pos tgt geo 400 0 1000\n";
+
+  cw::scenario::Scenario sc{};
+  if (!expect_ok(kCase, cw::scenario::parse_scenario_text(kText, sc), "parse")) {
+    return false;
+  }
+  cw::engine::Engine engine;
+  engine.set_fixed_step(0.05);
+  if (!expect_ok(kCase, engine.initialize(), "initialize")) {
+    return false;
+  }
+  if (!expect_ok(kCase, engine.apply_scenario(sc), "apply_scenario")) {
+    return false;
+  }
+  if (!expect_ok(kCase, engine.start(), "start")) {
+    return false;
+  }
+  constexpr int kSteps = 48;
+  for (int i = 0; i < kSteps; ++i) {
+    engine.step();
+  }
+  const std::uint64_t d = cw::engine::situation_digest(engine.situation());
+  for (int i = 0; i < kSteps; ++i) {
+    engine.step();
+  }
+  const std::uint64_t d2 = cw::engine::situation_digest(engine.situation());
+  if (d == d2) {
+    fail(kCase, "digest should change when sim advances");
+    return false;
+  }
+
+  cw::engine::Engine replay;
+  replay.set_fixed_step(0.05);
+  if (!expect_ok(kCase, replay.initialize(), "replay initialize")) {
+    return false;
+  }
+  if (!expect_ok(kCase, replay.apply_scenario(sc), "replay apply_scenario")) {
+    return false;
+  }
+  if (!expect_ok(kCase, replay.start(), "replay start")) {
+    return false;
+  }
+  for (int i = 0; i < kSteps * 2; ++i) {
+    replay.step();
+  }
+  const std::uint64_t d_replay = cw::engine::situation_digest(replay.situation());
+  if (d_replay != d2) {
+    fail(kCase, "replay digest mismatch (determinism)");
+    return false;
+  }
+
+  // 金样：固定步数 + 上述想定 + 当前引擎调度；变更数值算法时请同步更新并注明原因。
+  constexpr std::uint64_t kGolden = 0x321d5a9b81864e39ull;
+  if (d2 != kGolden) {
+    char buf[120];
+    std::snprintf(buf, sizeof buf, "golden situation_digest mismatch want %llx got %llx",
+                  static_cast<unsigned long long>(kGolden), static_cast<unsigned long long>(d2));
+    fail(kCase, buf);
+    return false;
+  }
+  return true;
+}
+
+bool test_parse_diagnostics_inline_line() {
+  constexpr const char* kCase = "parse_diagnostics_inline_line";
+  constexpr std::string_view kText = "version 1\nentity a mover\nversion 99\n";
+  cw::scenario::Scenario sc{};
+  cw::scenario::ParseDiagnostics diag{};
+  const cw::Error e = cw::scenario::parse_scenario_text(kText, sc, &diag);
+  if (!expect_error(kCase, e, cw::Error::ParseError, "version 99 line")) {
+    return false;
+  }
+  if (diag.line != 3) {
+    fail(kCase, "ParseDiagnostics.line should be 3");
+    return false;
+  }
+  return true;
+}
+
+bool test_scenario_corpus_files() {
+  constexpr const char* kCase = "scenario_corpus_files";
+  struct Row {
+    const char* relpath;
+    bool want_ok;
+    int want_line_on_error;
+  };
+  static const Row kRows[] = {
+      {"scenarios/corpus/valid_minimal.cws", true, 0},
+      {"scenarios/corpus/valid_route_air_comm.cws", true, 0},
+      {"scenarios/corpus/valid_blank_comment_header.cws", true, 0},
+      {"scenarios/corpus/invalid_duplicate_entity.cws", false, 3},
+      {"scenarios/corpus/invalid_unknown_command.cws", false, 3},
+      {"scenarios/corpus/invalid_entity_pos_missing_entity.cws", false, 3},
+      {"scenarios/corpus/invalid_version_line3_bad_number.cws", false, 3},
+      {"scenarios/corpus/invalid_no_version_line.cws", false, 0},
+      {"scenarios/corpus/invalid_entity_no_models.cws", false, 2},
+      {"scenarios/corpus/invalid_route_pt_unknown_route.cws", false, 3},
+      {"scenarios/corpus/invalid_route_attr_unknown_route.cws", false, 3},
+      {"scenarios/corpus/invalid_entity_mparam_mount_missing.cws", false, 3},
+      {"scenarios/corpus/invalid_ap_vert_unknown_airspace.cws", false, 3},
+      {"scenarios/corpus/invalid_air_attr_unknown_airspace.cws", false, 3},
+      {"scenarios/corpus/invalid_comm_link_unknown_node.cws", false, 3},
+      {"scenarios/corpus/invalid_polygon_two_vertices.cws", false, 0},
+      {"scenarios/corpus/invalid_duplicate_route_id.cws", false, 4},
+      {"scenarios/corpus/invalid_duplicate_comm_node.cws", false, 4},
+      {"scenarios/corpus/invalid_duplicate_airspace_id.cws", false, 4},
+      {"scenarios/corpus/invalid_airspace_id_box_then_poly.cws", false, 4},
+      {"scenarios/corpus/invalid_comm_bound_unknown_entity.cws", false, 3},
+      {"scenarios/corpus/invalid_comm_loss_out_of_range.cws", false, 5},
+      {"scenarios/corpus/invalid_comm_delay_negative.cws", false, 5},
+      {"scenarios/corpus/invalid_comm_bw_negative.cws", false, 3},
+      {"scenarios/corpus/invalid_entity_script_bad_kind.cws", false, 3},
+      {"scenarios/corpus/invalid_version_line_incomplete.cws", false, 3},
+  };
+  for (const Row& r : kRows) {
+    cw::scenario::Scenario sc{};
+    cw::scenario::ParseDiagnostics diag{};
+    const cw::Error e = cw::scenario::parse_scenario_file(r.relpath, sc, &diag);
+    if (r.want_ok) {
+      if (!cw::ok(e)) {
+        char buf[192];
+        std::snprintf(buf, sizeof buf, "expected ok for %s", r.relpath);
+        fail(kCase, buf);
+        return false;
+      }
+      if (diag.line != 0) {
+        fail(kCase, "diag.line should be 0 on success");
+        return false;
+      }
+    } else {
+      if (e != cw::Error::ParseError) {
+        char buf[192];
+        std::snprintf(buf, sizeof buf, "expected ParseError for %s", r.relpath);
+        fail(kCase, buf);
+        return false;
+      }
+      if (diag.line != r.want_line_on_error) {
+        char buf[192];
+        std::snprintf(buf, sizeof buf, "diag.line for %s want %d got %d", r.relpath,
+                      r.want_line_on_error, diag.line);
+        fail(kCase, buf);
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
 bool test_scenario_apply_and_step() {
   constexpr const char* kCase = "scenario_apply_and_step";
   constexpr std::string_view kText =
@@ -346,6 +506,8 @@ int main() {
       {"parse_no_entities", test_parse_no_entities},
       {"parse_unknown_model", test_parse_unknown_model},
       {"parse_full_cws_file", test_parse_full_cws_file},
+      {"parse_diagnostics_inline_line", test_parse_diagnostics_inline_line},
+      {"scenario_corpus_files", test_scenario_corpus_files},
       {"error_catalog_strings", test_error_catalog_strings},
       {"engine_start_before_init", test_engine_start_before_init},
       {"engine_pause_when_ready", test_engine_pause_when_ready},
@@ -356,6 +518,7 @@ int main() {
       {"engine_apply_unsupported_scenario_version", test_engine_apply_unsupported_scenario_version},
       {"apply_with_comdevice_weapon_mounts", test_apply_with_comdevice_weapon_mounts},
       {"scenario_apply_and_step", test_scenario_apply_and_step},
+      {"deterministic_situation_digest", test_deterministic_situation_digest},
   };
 
   for (const TestEntry& t : kTests) {

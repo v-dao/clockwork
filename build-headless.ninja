@@ -1,0 +1,17 @@
+# Clockwork — 无 Win32 OpenGL 目标（Linux / macOS / WSL 等）。不编译 /不链接 situation_view。
+# 用法：ninja -f build-headless.ninja
+# 生成 compile_commands 时建议：set NINJA_FILE=build-headless.ninja（Windows）或 export NINJA_FILE=build-headless.ninja（Unix）
+
+builddir = build
+exe_ext =
+
+cxx = g++
+cxxflags = -std=c++20 -Wall -Wextra -Wpedantic -O2
+includes = -Ilib/core -Ilib/math -Ilib/ecs -Ilib/motion -Ilib/engine -Ilib/scenario -Ilib/render -Ilib/situation_view
+
+include ninja/rules.ninja
+include ninja/objects_common.ninja
+include ninja/targets_headless.ninja
+include ninja/targets_metadata.ninja
+
+default $smoke_bin $verify_bin $engine_demo_bin $scenario_demo_bin $model_demo_bin $engine_tests_bin $builddir/compile_commands.json

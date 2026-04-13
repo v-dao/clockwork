@@ -1,0 +1,5 @@
+version 1
+entity e mover
+comm_node n1 entity not_an_entity
+comm_node n2
+comm_link n1 n2

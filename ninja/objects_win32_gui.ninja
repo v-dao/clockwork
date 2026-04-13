@@ -1,0 +1,3 @@
+# 仅 Windows 全量构建需要（gl_window Win32 + WGL）。
+
+build $builddir/lib/render/gl_window_win32.o: cxx lib/render/gl_window_win32.cpp

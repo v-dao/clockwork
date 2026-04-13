@@ -61,8 +61,8 @@ namespace cw::scenario {
     air_attr <id> <key> <value...>
 
   通信：
-    comm_node <id> [entity <bound_name>] [bw <bps>] [lat_ms <ms>]
-    comm_link <from_id> <to_id> [loss <0..1>] [delay_ms <ms>]
+    comm_node <id> [entity <bound_name>] [bw <bps>] [lat_ms <ms>]  # bw、lat_ms 须 >= 0
+    comm_link <from_id> <to_id> [loss <0..1>] [delay_ms <ms>]     # 须在两端 id 的 comm_node 之后；loss 为 [0,1]，delay_ms >= 0
 */
 
 namespace {
@@ -395,9 +395,32 @@ void lon_lat_alt_to_mercator(double lon_deg, double lat_deg, double alt_m, float
 }
 
 Error validate_scenario(const Scenario& sc) {
+  std::unordered_set<std::string> seen_routes;
+  for (const auto& r : sc.routes) {
+    if (r.id.empty()) {
+      return Error::ParseError;
+    }
+    if (seen_routes.count(r.id)) {
+      return Error::ParseError;
+    }
+    seen_routes.insert(r.id);
+  }
+  std::unordered_set<std::string> seen_air;
+  for (const auto& a : sc.airspaces) {
+    if (a.id.empty()) {
+      return Error::ParseError;
+    }
+    if (seen_air.count(a.id)) {
+      return Error::ParseError;
+    }
+    seen_air.insert(a.id);
+  }
   std::unordered_set<std::string> nodes;
   for (const auto& n : sc.comm_nodes) {
     if (n.id.empty()) {
+      return Error::ParseError;
+    }
+    if (nodes.count(n.id)) {
       return Error::ParseError;
     }
     nodes.insert(n.id);
@@ -424,16 +447,31 @@ Error validate_scenario(const Scenario& sc) {
   return Error::Ok;
 }
 
+Error fail_line(ParseDiagnostics* diag, int line) noexcept {
+  if (diag != nullptr) {
+    diag->line = line;
+  }
+  return Error::ParseError;
+}
+
 }  // namespace
 
-Error parse_scenario_text(std::string_view text, Scenario& out) {
+Error parse_scenario_text(std::string_view text, Scenario& out, ParseDiagnostics* diag) {
+  if (diag != nullptr) {
+    diag->line = 0;
+  }
   out = Scenario{};
   int version = 0;
+  std::unordered_set<std::string> route_ids_seen;
+  std::unordered_set<std::string> airspace_ids_seen;
+  std::unordered_set<std::string> comm_node_ids_seen;
 
   std::string chunk(text);
   std::istringstream in(chunk);
   std::string line;
+  int line_no = 0;
   while (std::getline(in, line)) {
+    ++line_no;
     trim_inplace(line);
     if (line.empty()) {
       continue;
@@ -449,35 +487,38 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
 
     if (cw::ieq(cmd, "version")) {
       if (tok.size() < 2) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       version = std::atoi(tok[1].c_str());
       if (version != 1 && version != 2) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       continue;
     }
 
     if (cw::ieq(cmd, "entity")) {
       if (tok.size() < 3) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       ScenarioEntityDesc ent;
       ent.name = tok[1];
       if (ent.name.empty()) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
+      }
+      if (find_entity(out, ent.name) != nullptr) {
+        return fail_line(diag, line_no);
       }
       /// position 默认 0；velocity 为机体系，由 entity_att 转世界系；由 entity_pos、entity_vel、entity_att 设置。
       for (std::size_t i = 2; i < tok.size(); ++i) {
         ModelMountDesc md;
         const Error me = model_from_token(tok[i], md.kind);
         if (!cw::ok(me)) {
-          return me;
+          return fail_line(diag, line_no);
         }
         ent.mounts.push_back(std::move(md));
       }
       if (ent.mounts.empty()) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       out.entities.push_back(std::move(ent));
       continue;
@@ -485,21 +526,21 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
 
     if (cw::ieq(cmd, "entity_pos")) {
       if (tok.size() < 4) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       ScenarioEntityDesc* e = find_entity(out, tok[1]);
       if (!e) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       if (cw::ieq(tok[2], "geo") || cw::ieq(tok[2], "wgs84") || cw::ieq(tok[2], "ll")) {
         if (tok.size() < 6) {
-          return Error::ParseError;
+          return fail_line(diag, line_no);
         }
         double lon = 0;
         double lat = 0;
         double alt = 0;
         if (!parse_double(tok[3], lon) || !parse_double(tok[4], lat) || !parse_double(tok[5], alt)) {
-          return Error::ParseError;
+          return fail_line(diag, line_no);
         }
         float mx = 0.F;
         float my = 0.F;
@@ -508,24 +549,24 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
         e->position = {mx, my, mz};
       } else if (cw::ieq(tok[2], "mercator") || cw::ieq(tok[2], "m") || cw::ieq(tok[2], "meters")) {
         if (tok.size() < 6) {
-          return Error::ParseError;
+          return fail_line(diag, line_no);
         }
         double px = 0;
         double py = 0;
         double pz = 0;
         if (!parse_double(tok[3], px) || !parse_double(tok[4], py) || !parse_double(tok[5], pz)) {
-          return Error::ParseError;
+          return fail_line(diag, line_no);
         }
         e->position = {static_cast<float>(px), static_cast<float>(py), static_cast<float>(pz)};
       } else {
         if (tok.size() < 5) {
-          return Error::ParseError;
+          return fail_line(diag, line_no);
         }
         double px = 0;
         double py = 0;
         double pz = 0;
         if (!parse_double(tok[2], px) || !parse_double(tok[3], py) || !parse_double(tok[4], pz)) {
-          return Error::ParseError;
+          return fail_line(diag, line_no);
         }
         e->position = {static_cast<float>(px), static_cast<float>(py), static_cast<float>(pz)};
       }
@@ -533,34 +574,34 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
     }
     if (cw::ieq(cmd, "entity_vel")) {
       if (tok.size() < 5) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       ScenarioEntityDesc* e = find_entity(out, tok[1]);
       if (!e) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       double vx = 0;
       double vy = 0;
       double vz = 0;
       if (!parse_double(tok[2], vx) || !parse_double(tok[3], vy) || !parse_double(tok[4], vz)) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       e->velocity = {static_cast<float>(vx), static_cast<float>(vy), static_cast<float>(vz)};
       continue;
     }
     if (cw::ieq(cmd, "entity_att")) {
       if (tok.size() < 5) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       ScenarioEntityDesc* ent = find_entity(out, tok[1]);
       if (!ent) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       double y = 0;
       double p = 0;
       double r = 0;
       if (!parse_double(tok[2], y) || !parse_double(tok[3], p) || !parse_double(tok[4], r)) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       ent->yaw_deg = static_cast<float>(y);
       ent->pitch_deg = static_cast<float>(p);
@@ -570,62 +611,62 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
 
     if (cw::ieq(cmd, "entity_id")) {
       if (tok.size() < 3) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       ScenarioEntityDesc* e = find_entity(out, tok[1]);
       if (!e) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       e->external_id = tok[2];
       continue;
     }
     if (cw::ieq(cmd, "entity_faction")) {
       if (tok.size() < 3) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       ScenarioEntityDesc* e = find_entity(out, tok[1]);
       if (!e) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       e->faction = tok[2];
       continue;
     }
     if (cw::ieq(cmd, "entity_variant")) {
       if (tok.size() < 3) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       ScenarioEntityDesc* e = find_entity(out, tok[1]);
       if (!e) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       e->variant_ref = tok[2];
       continue;
     }
     if (cw::ieq(cmd, "entity_icon2d")) {
       if (tok.size() < 3) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       ScenarioEntityDesc* e = find_entity(out, tok[1]);
       if (!e) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       e->icon_2d_path = tok[2];
       continue;
     }
     if (cw::ieq(cmd, "entity_color")) {
       if (tok.size() < 3) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       ScenarioEntityDesc* e = find_entity(out, tok[1]);
       if (!e) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       if (tok.size() >= 5) {
         unsigned ru = 0;
         unsigned gu = 0;
         unsigned bu = 0;
         if (!parse_u8_255(tok[2], ru) || !parse_u8_255(tok[3], gu) || !parse_u8_255(tok[4], bu)) {
-          return Error::ParseError;
+          return fail_line(diag, line_no);
         }
         e->has_display_color = true;
         e->display_color_r = static_cast<float>(ru) / 255.F;
@@ -636,50 +677,50 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
         float gf = 0.F;
         float bf = 0.F;
         if (!parse_color_token(tok[2], rf, gf, bf)) {
-          return Error::ParseError;
+          return fail_line(diag, line_no);
         }
         e->has_display_color = true;
         e->display_color_r = rf;
         e->display_color_g = gf;
         e->display_color_b = bf;
       } else {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       continue;
     }
     if (cw::ieq(cmd, "entity_model3d")) {
       if (tok.size() < 3) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       ScenarioEntityDesc* e = find_entity(out, tok[1]);
       if (!e) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       e->model_3d_path = tok[2];
       continue;
     }
     if (cw::ieq(cmd, "entity_attr")) {
       if (tok.size() < 4) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       ScenarioEntityDesc* e = find_entity(out, tok[1]);
       if (!e) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       e->platform_attributes.push_back({tok[2], join_tokens(tok, 3)});
       continue;
     }
     if (cw::ieq(cmd, "entity_mparam")) {
       if (tok.size() < 5) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       ScenarioEntityDesc* e = find_entity(out, tok[1]);
       if (!e) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       cw::engine::ModelKind mk{};
       if (!cw::ok(model_from_token(tok[2], mk))) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       ModelMountDesc* mount = nullptr;
       for (auto& m : e->mounts) {
@@ -689,18 +730,18 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
         }
       }
       if (!mount) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       mount->params.push_back({tok[3], join_tokens(tok, 4)});
       continue;
     }
     if (cw::ieq(cmd, "entity_script")) {
       if (tok.size() < 4) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       ScenarioEntityDesc* e = find_entity(out, tok[1]);
       if (!e) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       const std::string& kind_tok = tok[2];
       ScriptBindingDesc sb;
@@ -709,7 +750,7 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
       } else if (cw::ieq(kind_tok, "blueprint") || cw::ieq(kind_tok, "bp")) {
         sb.kind = ScriptBindingDesc::Kind::Blueprint;
       } else {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       sb.resource_path = tok[3];
       if (sb.kind == ScriptBindingDesc::Kind::Lua) {
@@ -723,17 +764,21 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
 
     if (cw::ieq(cmd, "route")) {
       if (tok.size() < 3) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       ScenarioRoute r;
       r.id = tok[1];
       r.display_name = tok[2];
+      if (r.id.empty() || route_ids_seen.count(r.id)) {
+        return fail_line(diag, line_no);
+      }
+      route_ids_seen.insert(r.id);
       out.routes.push_back(std::move(r));
       continue;
     }
     if (cw::ieq(cmd, "route_pt")) {
       if (tok.size() < 5) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       ScenarioRoute* rt = nullptr;
       for (auto& r : out.routes) {
@@ -743,13 +788,13 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
         }
       }
       if (!rt) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       double x = 0;
       double y = 0;
       double z = 0;
       if (!parse_double(tok[2], x) || !parse_double(tok[3], y) || !parse_double(tok[4], z)) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       rt->waypoints.push_back(RouteWaypoint{static_cast<float>(x), static_cast<float>(y),
                                              static_cast<float>(z)});
@@ -757,7 +802,7 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
     }
     if (cw::ieq(cmd, "route_pt_geo")) {
       if (tok.size() < 5) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       ScenarioRoute* rt = nullptr;
       for (auto& r : out.routes) {
@@ -767,13 +812,13 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
         }
       }
       if (!rt) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       double lon = 0;
       double lat = 0;
       double alt = 0;
       if (!parse_double(tok[2], lon) || !parse_double(tok[3], lat) || !parse_double(tok[4], alt)) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       float mx = 0.F;
       float my = 0.F;
@@ -784,11 +829,11 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
     }
     if (cw::ieq(cmd, "route_attr")) {
       if (tok.size() < 4) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       ScenarioRoute* rt = find_route(out, tok[1]);
       if (!rt) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       if (cw::ieq(tok[2], "color")) {
         if (tok.size() >= 6) {
@@ -796,7 +841,7 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
           unsigned gu = 0;
           unsigned bu = 0;
           if (!parse_u8_255(tok[3], ru) || !parse_u8_255(tok[4], gu) || !parse_u8_255(tok[5], bu)) {
-            return Error::ParseError;
+            return fail_line(diag, line_no);
           }
           rt->has_line_color = true;
           rt->line_r = static_cast<float>(ru) / 255.F;
@@ -807,34 +852,34 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
           float gf = 0.F;
           float bf = 0.F;
           if (!parse_color_token(tok[3], rf, gf, bf)) {
-            return Error::ParseError;
+            return fail_line(diag, line_no);
           }
           rt->has_line_color = true;
           rt->line_r = rf;
           rt->line_g = gf;
           rt->line_b = bf;
         } else {
-          return Error::ParseError;
+          return fail_line(diag, line_no);
         }
       } else if (cw::ieq(tok[2], "width")) {
         if (tok.size() < 4) {
-          return Error::ParseError;
+          return fail_line(diag, line_no);
         }
         double w = 0;
         if (!parse_double(tok[3], w) || !std::isfinite(w) || w <= 0.0 || w > 64.0) {
-          return Error::ParseError;
+          return fail_line(diag, line_no);
         }
         rt->has_line_width = true;
         rt->line_width_px = static_cast<float>(w);
       } else {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       continue;
     }
 
     if (cw::ieq(cmd, "airspace_box")) {
       if (tok.size() < 8) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       ScenarioAirspace a;
       a.id = tok[1];
@@ -842,17 +887,21 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
       double v[6]{};
       for (int i = 0; i < 6; ++i) {
         if (!parse_double(tok[2 + static_cast<std::size_t>(i)], v[i])) {
-          return Error::ParseError;
+          return fail_line(diag, line_no);
         }
       }
       a.box_min = {static_cast<float>(v[0]), static_cast<float>(v[1]), static_cast<float>(v[2])};
       a.box_max = {static_cast<float>(v[3]), static_cast<float>(v[4]), static_cast<float>(v[5])};
+      if (a.id.empty() || airspace_ids_seen.count(a.id)) {
+        return fail_line(diag, line_no);
+      }
+      airspace_ids_seen.insert(a.id);
       out.airspaces.push_back(std::move(a));
       continue;
     }
     if (cw::ieq(cmd, "airspace_box_geo")) {
       if (tok.size() < 8) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       ScenarioAirspace a;
       a.id = tok[1];
@@ -866,7 +915,7 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
       if (!parse_double(tok[2], min_lon) || !parse_double(tok[3], min_lat) ||
           !parse_double(tok[4], min_alt) || !parse_double(tok[5], max_lon) ||
           !parse_double(tok[6], max_lat) || !parse_double(tok[7], max_alt)) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       float mx0 = 0.F;
       float my0 = 0.F;
@@ -878,49 +927,57 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
       lon_lat_alt_to_mercator(max_lon, max_lat, max_alt, mx1, my1, mz1);
       a.box_min = {mx0, my0, mz0};
       a.box_max = {mx1, my1, mz1};
+      if (a.id.empty() || airspace_ids_seen.count(a.id)) {
+        return fail_line(diag, line_no);
+      }
+      airspace_ids_seen.insert(a.id);
       out.airspaces.push_back(std::move(a));
       continue;
     }
     if (cw::ieq(cmd, "airspace_poly")) {
       if (tok.size() < 2) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       ScenarioAirspace a;
       a.id = tok[1];
       a.kind = AirspaceKind::Polygon;
+      if (a.id.empty() || airspace_ids_seen.count(a.id)) {
+        return fail_line(diag, line_no);
+      }
+      airspace_ids_seen.insert(a.id);
       out.airspaces.push_back(std::move(a));
       continue;
     }
     if (cw::ieq(cmd, "ap_vert")) {
       if (tok.size() < 5) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       ScenarioAirspace* a = find_airspace(out, tok[1]);
       if (!a || a->kind != AirspaceKind::Polygon) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       double x = 0;
       double y = 0;
       double z = 0;
       if (!parse_double(tok[2], x) || !parse_double(tok[3], y) || !parse_double(tok[4], z)) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       a->polygon.push_back({static_cast<float>(x), static_cast<float>(y), static_cast<float>(z)});
       continue;
     }
     if (cw::ieq(cmd, "ap_vert_geo")) {
       if (tok.size() < 5) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       ScenarioAirspace* a = find_airspace(out, tok[1]);
       if (!a || a->kind != AirspaceKind::Polygon) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       double lon = 0;
       double lat = 0;
       double alt = 0;
       if (!parse_double(tok[2], lon) || !parse_double(tok[3], lat) || !parse_double(tok[4], alt)) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       float mx = 0.F;
       float my = 0.F;
@@ -931,11 +988,11 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
     }
     if (cw::ieq(cmd, "air_attr")) {
       if (tok.size() < 4) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       ScenarioAirspace* a = find_airspace(out, tok[1]);
       if (!a) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       a->attrs.push_back({tok[2], join_tokens(tok, 3)});
       continue;
@@ -943,7 +1000,7 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
 
     if (cw::ieq(cmd, "comm_node")) {
       if (tok.size() < 2) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       CommNodeDesc n;
       n.id = tok[1];
@@ -958,63 +1015,102 @@ Error parse_scenario_text(std::string_view text, Scenario& out) {
       const std::unordered_map<std::string, int> sk;
       const Error pe = parse_kv_pairs(tok, i, fk, f, sk, s);
       if (!cw::ok(pe)) {
-        return pe;
+        return fail_line(diag, line_no);
       }
       if (f.count("bw")) {
-        n.bandwidth_bps = f["bw"];
+        const double bw = f["bw"];
+        if (!std::isfinite(bw) || bw < 0.0) {
+          return fail_line(diag, line_no);
+        }
+        n.bandwidth_bps = bw;
       }
       if (f.count("lat_ms")) {
-        n.latency_ms = f["lat_ms"];
+        const double lat = f["lat_ms"];
+        if (!std::isfinite(lat) || lat < 0.0) {
+          return fail_line(diag, line_no);
+        }
+        n.latency_ms = lat;
       }
+      if (n.id.empty() || comm_node_ids_seen.count(n.id)) {
+        return fail_line(diag, line_no);
+      }
+      if (!n.bound_entity.empty() && find_entity(out, n.bound_entity) == nullptr) {
+        return fail_line(diag, line_no);
+      }
+      comm_node_ids_seen.insert(n.id);
       out.comm_nodes.push_back(std::move(n));
       continue;
     }
     if (cw::ieq(cmd, "comm_link")) {
       if (tok.size() < 3) {
-        return Error::ParseError;
+        return fail_line(diag, line_no);
       }
       CommLinkDesc l;
       l.from_node = tok[1];
       l.to_node = tok[2];
+      if (l.from_node.empty() || l.to_node.empty()) {
+        return fail_line(diag, line_no);
+      }
+      if (!comm_node_ids_seen.count(l.from_node) || !comm_node_ids_seen.count(l.to_node)) {
+        return fail_line(diag, line_no);
+      }
       std::unordered_map<std::string, double> f;
       std::unordered_map<std::string, std::string> s;
       const std::unordered_map<std::string, int> fk{{"loss", 0}, {"delay_ms", 0}};
       const std::unordered_map<std::string, int> sk;
       const Error pe = parse_kv_pairs(tok, 3, fk, f, sk, s);
       if (!cw::ok(pe)) {
-        return pe;
+        return fail_line(diag, line_no);
       }
       if (f.count("loss")) {
-        l.packet_loss = f["loss"];
+        const double loss = f["loss"];
+        if (!std::isfinite(loss) || loss < 0.0 || loss > 1.0) {
+          return fail_line(diag, line_no);
+        }
+        l.packet_loss = loss;
       }
       if (f.count("delay_ms")) {
-        l.delay_ms = f["delay_ms"];
+        const double dms = f["delay_ms"];
+        if (!std::isfinite(dms) || dms < 0.0) {
+          return fail_line(diag, line_no);
+        }
+        l.delay_ms = dms;
       }
       out.comm_links.push_back(std::move(l));
       continue;
     }
 
-    return Error::ParseError;
+    return fail_line(diag, line_no);
   }
 
   if (version != 1 && version != 2) {
-    return Error::ParseError;
+    return fail_line(diag, 0);
   }
   if (out.entities.empty()) {
-    return Error::ParseError;
+    return fail_line(diag, 0);
   }
   out.version = version;
-  return validate_scenario(out);
+  const Error v = validate_scenario(out);
+  if (!cw::ok(v)) {
+    if (diag != nullptr) {
+      diag->line = 0;
+    }
+    return v;
+  }
+  if (diag != nullptr) {
+    diag->line = 0;
+  }
+  return Error::Ok;
 }
 
-Error parse_scenario_file(const char* path_utf8, Scenario& out) {
+Error parse_scenario_file(const char* path_utf8, Scenario& out, ParseDiagnostics* diag) {
   std::ifstream f(path_utf8, std::ios::binary);
   if (!f) {
     return Error::IOError;
   }
   std::ostringstream buf;
   buf << f.rdbuf();
-  return parse_scenario_text(buf.str(), out);
+  return parse_scenario_text(buf.str(), out, diag);
 }
 
 }  // namespace cw::scenario

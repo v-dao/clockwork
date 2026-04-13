@@ -1,6 +1,6 @@
-# Clockwork — Ninja build (g++, C++20).
-# Windows MinGW: keep exe_ext = .exe
-# Linux/macOS: set exe_ext = (empty) for smoke / verify without extension
+# Clockwork — Ninja（g++、C++20）。默认含 Win32 OpenGL `situation_view`（MinGW）。
+# 无界面 /非 Windows：使用 build-headless.ninja（见 doc/development.md）。
+# 实现拆分为 ninja/*.ninja；翻译单元依赖由 -MMD 生成的 .d 跟踪，勿再手工钉 scenario.hpp。
 
 builddir = build
 exe_ext = .exe
@@ -9,68 +9,11 @@ cxx = g++
 cxxflags = -std=c++20 -Wall -Wextra -Wpedantic -O2
 includes = -Ilib/core -Ilib/math -Ilib/ecs -Ilib/motion -Ilib/engine -Ilib/scenario -Ilib/render -Ilib/situation_view
 
-# `Scenario` / `ScenarioRoute` 等定义于此；若仅改头文件而 .cpp 未变，须仍能触发依赖它的 .o 重编译（否则会出现结构体尺寸不一致与运行时 bad_alloc）。
-scenario_hpp = lib/scenario/cw/scenario/scenario.hpp
-entity_record_hpp = lib/engine/cw/engine/entity_record.hpp
-
-smoke_bin = $builddir/cmd/smoke/smoke$exe_ext
-verify_bin = $builddir/cmd/verify/verify$exe_ext
-engine_demo_bin = $builddir/cmd/engine_demo/engine_demo$exe_ext
-scenario_demo_bin = $builddir/cmd/scenario_demo/scenario_demo$exe_ext
-model_demo_bin = $builddir/cmd/model_demo/model_demo$exe_ext
-engine_tests_bin = $builddir/cmd/engine_tests/engine_tests$exe_ext
-situation_view_bin = $builddir/cmd/situation_view/situation_view$exe_ext
-
-rule cxx
-  command = $cxx $cxxflags $includes -c $in -o $out
-  description = CXX $out
-
-rule link
-  command = $cxx $cxxflags $includes $in -o $out
-  description = LINK $out
-
-# 阶段 4：Win32 + OpenGL（MinGW 链接 gdi32 / opengl32 / user32）。非 Windows 请从 default 中移除此目标。
-rule link_gui
-  command = $cxx $cxxflags $includes $in -o $out -lglu32 -lgdi32 -lopengl32 -luser32
-  description = LINK_GUI $out
-
-build $builddir/lib/core/log.o: cxx lib/core/log.cpp
-build $builddir/lib/core/error.o: cxx lib/core/error.cpp
-build $builddir/lib/math/vec3.o: cxx lib/math/vec3.cpp
-build $builddir/lib/math/linalg.o: cxx lib/math/linalg.cpp
-build $builddir/lib/ecs/entity_coordinate_system.o: cxx lib/ecs/entity_coordinate_system.cpp
-build $builddir/lib/motion/motion_model_3dof.o: cxx lib/motion/motion_model_3dof.cpp | $scenario_hpp
-build $builddir/lib/engine/types.o: cxx lib/engine/types.cpp
-build $builddir/lib/engine/engine.o: cxx lib/engine/engine.cpp | $scenario_hpp $entity_record_hpp
-build $builddir/lib/scenario/parse.o: cxx lib/scenario/parse.cpp | $scenario_hpp
-build $builddir/lib/render/gl_window_win32.o: cxx lib/render/gl_window_win32.cpp
-build $builddir/lib/render/texture_bmp.o: cxx lib/render/texture_bmp.cpp
-build $builddir/lib/render/svg_line_texture.o: cxx lib/render/svg_line_texture.cpp
-build $builddir/lib/render/world_vector_merc.o: cxx lib/render/world_vector_merc.cpp
-build $builddir/lib/render/world_vector_lines.o: cxx lib/render/world_vector_lines.cpp
-build $builddir/lib/render/globe_program.o: cxx lib/render/globe_program.cpp
-build $builddir/lib/render/tactical_map_2d.o: cxx lib/render/tactical_map_2d.cpp | $scenario_hpp
-build $builddir/lib/render/globe_view_3d.o: cxx lib/render/globe_view_3d.cpp
-build $builddir/lib/render/lonlat_grid.o: cxx lib/render/lonlat_grid.cpp
-build $builddir/lib/situation_view/situation_view_shell.o: cxx lib/situation_view/situation_view_shell.cpp
-build $builddir/lib/situation_view/asset_paths.o: cxx lib/situation_view/asset_paths.cpp
-build $builddir/lib/situation_view/icon_texture_cache.o: cxx lib/situation_view/icon_texture_cache.cpp
-build $builddir/lib/situation_view/situation_map_globe_render.o: cxx lib/situation_view/situation_map_globe_render.cpp | $scenario_hpp
-
-build $smoke_bin: link cmd/smoke/smoke.cpp $builddir/lib/core/log.o $builddir/lib/core/error.o $builddir/lib/math/vec3.o
-build $verify_bin: link cmd/verify/verify.cpp $builddir/lib/core/log.o $builddir/lib/core/error.o $builddir/lib/math/vec3.o
-build $engine_demo_bin: link cmd/engine_demo/engine_demo.cpp $builddir/lib/core/log.o $builddir/lib/core/error.o $builddir/lib/math/vec3.o $builddir/lib/ecs/entity_coordinate_system.o $builddir/lib/motion/motion_model_3dof.o $builddir/lib/engine/types.o $builddir/lib/engine/engine.o
-build $scenario_demo_bin: link cmd/scenario_demo/scenario_demo.cpp $builddir/lib/core/log.o $builddir/lib/core/error.o $builddir/lib/math/vec3.o $builddir/lib/ecs/entity_coordinate_system.o $builddir/lib/motion/motion_model_3dof.o $builddir/lib/engine/types.o $builddir/lib/engine/engine.o $builddir/lib/scenario/parse.o
-build $model_demo_bin: link cmd/model_demo/model_demo.cpp $builddir/lib/core/log.o $builddir/lib/core/error.o $builddir/lib/math/vec3.o $builddir/lib/ecs/entity_coordinate_system.o $builddir/lib/motion/motion_model_3dof.o $builddir/lib/engine/types.o $builddir/lib/engine/engine.o $builddir/lib/scenario/parse.o
-build $engine_tests_bin: link cmd/engine_tests/engine_tests.cpp $builddir/lib/core/log.o $builddir/lib/core/error.o $builddir/lib/math/vec3.o $builddir/lib/ecs/entity_coordinate_system.o $builddir/lib/motion/motion_model_3dof.o $builddir/lib/engine/types.o $builddir/lib/engine/engine.o $builddir/lib/scenario/parse.o
-build $situation_view_bin: link_gui cmd/situation_view/situation_view.cpp $builddir/lib/core/log.o $builddir/lib/core/error.o $builddir/lib/math/vec3.o $builddir/lib/math/linalg.o $builddir/lib/ecs/entity_coordinate_system.o $builddir/lib/motion/motion_model_3dof.o $builddir/lib/engine/types.o $builddir/lib/engine/engine.o $builddir/lib/scenario/parse.o $builddir/lib/render/gl_window_win32.o $builddir/lib/render/texture_bmp.o $builddir/lib/render/svg_line_texture.o $builddir/lib/render/world_vector_merc.o $builddir/lib/render/world_vector_lines.o $builddir/lib/render/globe_program.o $builddir/lib/render/tactical_map_2d.o $builddir/lib/render/lonlat_grid.o $builddir/lib/render/globe_view_3d.o $builddir/lib/situation_view/situation_view_shell.o $builddir/lib/situation_view/asset_paths.o $builddir/lib/situation_view/icon_texture_cache.o $builddir/lib/situation_view/situation_map_globe_render.o
-
-# compile_commands.json for clangd / IDE (requires Python 3 on PATH; NINJA env overrides ninja binary)
-python = python
-rule regen_compdb
-  command = $python scripts/gen_compile_commands.py
-  description = GEN compile_commands.json
-
-build $builddir/compile_commands.json: regen_compdb | build.ninja scripts/gen_compile_commands.py
+include ninja/rules.ninja
+include ninja/objects_common.ninja
+include ninja/objects_win32_gui.ninja
+include ninja/targets_headless.ninja
+include ninja/targets_gui_win32.ninja
+include ninja/targets_metadata.ninja
 
 default $smoke_bin $verify_bin $engine_demo_bin $scenario_demo_bin $model_demo_bin $engine_tests_bin $situation_view_bin $builddir/compile_commands.json

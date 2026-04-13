@@ -11,7 +11,7 @@ Clockwork 使用自研文本想定，扩展名建议 `.cws`（Clockwork Scenario
 - **实体顺序**：`entity` 必须先于针对该实体名的扩展行（`entity_faction`、`entity_mparam` 等）。
 - **航线**：必须先有 `route <id> ...`，再对该 `id` 使用 `route_pt` / `route_pt_geo`；可选 `route_attr` 设置显示颜色与线宽。
 - **多边形空域**：必须先 `airspace_poly <id>`，再对该 `id` 使用 `ap_vert`（至少 3 个顶点方可通过校验）。
-- **通信**：`comm_link` 引用的节点 id 必须已在 `comm_node` 中定义；`comm_node` 的 `entity <name>` 须为已声明的实体名。
+- **通信**：文件中 **`comm_link` 须写在两端节点各自的 `comm_node` 行之后**（解析器按行校验）；`comm_node` 的 `entity <name>` 须为已声明实体。`bw`、`lat_ms` 须 **≥ 0**；`loss` 须在 **[0, 1]**，`delay_ms` 须 **≥ 0**。
 
 ## 模型种类（entity 行与 entity_mparam）
 
@@ -235,4 +235,6 @@ entity_mparam bravo signature rcs_m2 12.5
 | 航线   | `ScenarioRoute`（`waypoints`）                         |
 
 
-解析入口：`cw::scenario::parse_scenario_file(path, out)`、`parse_scenario_text(text, out)`（声明见 `cw/scenario/parse.hpp`）。
+解析入口：`cw::scenario::parse_scenario_file(path, out, diag)`、`parse_scenario_text(text, out, diag)`（`diag` 可为空；声明见 `cw/scenario/parse.hpp`）。失败且 `diag != nullptr` 时 **`ParseDiagnostics::line` 为 1-based 物理行**（空行与 `#` 注释行仍占行号）。**`comm_link` 引用未声明节点、loss/delay/bw 越界**等已在解析阶段带行号报错。**收尾结构校验**失败（如多边形顶点不足、仅缺 `version` 等）时常见 **`line` 为 0**。同一 `entity` 名称出现第二次会在该行报错。
+
+小型有效/无效语料与 `engine_tests` 对拍见目录 **`scenarios/corpus/`**。**`ParseDiagnostics::line`**：多数单行语法与引用错误为该行1-based 行号；**重复的** `route` /空域 / `comm_node` id、**`comm_node … entity` 无效**、**`comm_link` 端点未先声明**、**通信数值越界** 等亦在当前行报错。缺 `version`、多边形顶点过少等仍常见 **`line == 0`**。

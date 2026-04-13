@@ -33,21 +33,19 @@
 
 - `cw::ieq` / `cw::ieq_cstr` 见 `lib/core/cw/string_match.hpp`；`cw::math::kPi` / `kPiF`（`std::numbers`）见 `lib/math/cw/math/constants.hpp`。`parse.cpp`、`engine.cpp`、`motion_model_3dof.cpp`、`svg_line_texture.cpp` 及 `mercator_geo.hpp`、`entity_coordinate_system.cpp` 等已切换。其余渲染 TU 中局部 `kPi` 可随改动逐步收敛。
 
-### 6. 构建与可移植性
+### 6. 构建与可移植性（已部分落实）
 
-- `build.ninja` 默认 GUI 链接为 Win32 + MinGW 库；非 Windows 需手工调整 `default`，对多平台协作不友好。
-- 通过 `scenario_hpp` 手工钉依赖规避「只改头文件不重编」，规模扩大后易遗漏。
-- **建议**：按平台拆分构建片段或条件规则；中长期可考虑 CMake + Ninja 生成依赖，或减少对单一「魔法头文件」的依赖声明。
+- 已拆分 `ninja/*.ninja`，并提供根目录 `build-headless.ninja`（无 `situation_view` / `gl_window_win32`）。`cxx` 规则启用 `-MMD` + `depfile`，替代手工钉 `scenario.hpp`。`NINJA_FILE` 用于 `gen_compile_commands.py` 与 headless 一致。**构建系统以 Ninja 为唯一正式方案；本项目不引入 CMake，也不会迁移到 CMake。**
 
-### 7. 数值与确定性
+### 7. 数值与确定性（已部分落实）
 
-- `sim_time_` / `fixed_dt_` 使用 `double`，大量几何与运动使用 `float`，长时间仿真累积与「确定性复现」目标需尽早约定。
-- **建议**：文档化时间权威类型与步进公式；对关键路径做确定性回归（固定步数、比对状态摘要）。
+- `sim_time_` / `fixed_dt_` 使用 `double`，步内机动与 `Vec3` 等使用 `float`；已在 [architecture.md](architecture.md) 第 3.6 节与 [api.md](api.md) 第 2.3 节约定权威时钟、步长公式与 `step()` 顺序。
+- **回归**：`cw::engine::situation_digest`（`lib/engine/situation_digest.cpp`）与 `engine_tests` 中固定步数金样对拍；变更数值行为时需更新金样。
 
-### 8. 想定解析器健壮性
+### 8. 想定解析器健壮性（已部分落实）
 
-- `parse.cpp` 体量大、手写分词与状态，扩展语法时边界情况（转义、异常行、重复 id 等）风险高，且缺少系统化单测。
-- **建议**：维护小型语料（有效/无效样例）与自动化测试；错误路径尽量返回 `ParseError` 并带行号（若尚未实现，对排错帮助大）。
+- `parse.cpp` 仍为手写分词；**`scenarios/corpus/`** 与 **`engine_tests`** 持续扩展。解析阶段已拦截**重复** `route`/空域/`comm_node` id、**无效** `comm_node entity`、**`comm_link` 须在 `comm_node` 之后**且端点须已声明、**loss ∈ [0,1]** 与 **`delay_ms`/`bw`/`lat_ms` ≥ 0**、**非法 `entity_script` kind** 等（多带行号）。收尾 **`validate`** 仍处理缺 `version`、多边形顶点过少等（常 **`line == 0`**）。
+- **后续**：更细的错误分类（枚举/子码）、转义与续行若纳入语法再补行号策略与语料。
 
 ### 9. 文档与产品表述对齐
 

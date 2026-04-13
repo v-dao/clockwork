@@ -1,0 +1,8 @@
+python = python
+
+rule regen_compdb
+  command = $python scripts/gen_compile_commands.py
+  description = GEN compile_commands.json
+
+# 任一条目变更则重生成 compile_commands（与所用构建描述一致由 gen_compile_commands 的 NINJA_FILE 决定）。
+build $builddir/compile_commands.json: regen_compdb | build.ninja build-headless.ninja ninja/rules.ninja ninja/objects_common.ninja ninja/objects_win32_gui.ninja ninja/targets_headless.ninja ninja/targets_gui_win32.ninja ninja/targets_metadata.ninja scripts/gen_compile_commands.py

@@ -1,0 +1,5 @@
+version 1
+entity e mover
+airspace_poly z1
+ap_vert z1 0 0 0
+ap_vert z1 100 0 0

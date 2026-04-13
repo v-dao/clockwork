@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Emit build/compile_commands.json via `ninja -t compdb cxx` (stdlib only)."""
+"""Emit build/compile_commands.json via `ninja -t compdb cxx` (stdlib only).
+
+环境变量 NINJA_FILE：传给 ninja 的构建文件，默认 build.ninja；使用 build-headless.ninja 时
+应设为 build-headless.ninja，以便 compdb 与当前目标集一致。
+"""
 from __future__ import annotations
 
 import json
@@ -12,8 +16,9 @@ from pathlib import Path
 def main() -> int:
     root = Path(__file__).resolve().parent.parent
     ninja = os.environ.get("NINJA", "ninja")
+    ninja_file = os.environ.get("NINJA_FILE", "build.ninja")
     proc = subprocess.run(
-        [ninja, "-t", "compdb", "cxx"],
+        [ninja, "-f", ninja_file, "-t", "compdb", "cxx"],
         cwd=root,
         capture_output=True,
         text=True,

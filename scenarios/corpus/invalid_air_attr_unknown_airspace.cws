@@ -1,0 +1,3 @@
+version 1
+entity e mover
+air_attr ghost_layer note value here

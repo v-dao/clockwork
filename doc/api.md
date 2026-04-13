@@ -59,6 +59,14 @@ README 要求支持**保存快照并恢复快照**，且与产品规则一致：
 | `NotAllowedWhenFederated` | `NotAllowedWhenFederated` | 联邦模式下调用快照 API |
 | `UnsupportedScenarioVersion` | `UnsupportedScenarioVersion` | 想定 `version` 非引擎支持的值 |
 
+### 2.3 仿真时钟（实现要点）
+
+| 项 | 约定 |
+|----|------|
+| 时钟与步长类型 | `sim_time`、`fixed_dt`、倍速在引擎内部为 `double`；对外快照字段与之对齐。 |
+| 模型积分步长 | `dt = (float)(fixed_dt * time_scale)`，与 `Vec3` 等 `float` 几何一致。 |
+| 每步时钟更新 | 在当步模型 pass（不含末尾传感器聚合中的 pass）之后累加仿真时间，再聚合态势；详见 [architecture.md](architecture.md) 第 3.6 节。 |
+
 ---
 
 ## 3. 想定初始化数据（「限定信息」）

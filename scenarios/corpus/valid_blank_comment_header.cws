@@ -1,0 +1,4 @@
+# corpus: leading blank lines and comment
+
+version 1
+entity e mover

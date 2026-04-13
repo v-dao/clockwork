@@ -1,0 +1,3 @@
+version 1
+entity e mover
+entity_mparam e weapon rounds 3

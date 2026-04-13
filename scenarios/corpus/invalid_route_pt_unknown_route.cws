@@ -1,0 +1,3 @@
+version 1
+entity e mover
+route_pt ghost_route 0 0 0

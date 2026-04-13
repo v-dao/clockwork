@@ -1,0 +1,3 @@
+version 1
+entity e mover
+comm_node n1 entity e bw -100
