@@ -1,7 +1,7 @@
 # 由 build.ninja / build-headless.ninja 先定义：builddir、cxx、cxxflags、includes
 
 rule cxx
-  command = $cxx $cxxflags $includes -MMD -MF $out.d -c $in -o $out
+  command = $cxx $cxxflags $extra_flags $includes -MMD -MF $out.d -c $in -o $out
   depfile = $out.d
   deps = gcc
   description = CXX $out
@@ -12,5 +12,5 @@ rule link
 
 # Win32 + OpenGL（MinGW）；仅 build.ninja 会用到 link_gui。
 rule link_gui
-  command = $cxx $cxxflags $includes $in -o $out -lglu32 -lgdi32 -lopengl32 -luser32
+  command = $cxx $cxxflags $includes $in -o $out -lglu32 -lgdi32 -lopengl32 -luser32 -Lthird_party/vulkan-win32-mingw -lvulkan-1
   description = LINK_GUI $out

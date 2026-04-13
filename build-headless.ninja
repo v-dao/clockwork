@@ -8,6 +8,7 @@ exe_ext =
 cxx = g++
 cxxflags = -std=c++20 -Wall -Wextra -Wpedantic -O2
 includes = -Ilib/core -Ilib/math -Ilib/ecs -Ilib/motion -Ilib/engine -Ilib/scenario -Ilib/render -Ilib/situation_view
+extra_flags =
 
 include ninja/rules.ninja
 include ninja/objects_common.ninja

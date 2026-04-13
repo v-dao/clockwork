@@ -2,6 +2,12 @@
 
 build $builddir/lib/render/gl_window.o: cxx lib/render/gl_window.cpp
 build $builddir/lib/render/gl_window_factory.o: cxx lib/render/gl_window_factory.cpp
+build $builddir/lib/render/graphics_device.o: cxx lib/render/graphics_device.cpp
+build $builddir/lib/render/gl_graphics_device.o: cxx lib/render/gl_graphics_device.cpp
+build $builddir/lib/render/graphics_device_factory.o: cxx lib/render/graphics_device_factory.cpp
+build $builddir/lib/render/vulkan_graphics_device.o: cxx lib/render/vulkan_graphics_device.cpp
+  extra_flags = -Ithird_party/Vulkan-Headers/include
+build $builddir/lib/render/gl_offscreen_win32.o: cxx lib/render/gl_offscreen_win32.cpp
 build $builddir/lib/render/gl_window_win32.o: cxx lib/render/gl_window_win32.cpp
 build $builddir/lib/situation_view/situation_view_chrome.o: cxx lib/situation_view/situation_view_chrome.cpp
 build $builddir/lib/situation_view/situation_view_chrome_win32.o: cxx lib/situation_view/situation_view_chrome_win32.cpp

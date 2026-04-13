@@ -15,6 +15,7 @@ namespace cw::render {
 struct WorldVectorMerc;
 
 /// 在已有 OpenGL 上下文、且已请求 3.3 Compatibility 时初始化 GLSL 球面程序；失败则 `globe_program_ready()` 为 false。
+/// 迁移 Vulkan 时：同类初始化应迁入后端专用的 `ShaderModule` / `Pipeline` 构建路径，见 `graphics_device.hpp`。
 [[nodiscard]] bool globe_program_try_init() noexcept;
 
 void globe_program_shutdown() noexcept;

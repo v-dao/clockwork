@@ -8,6 +8,8 @@ exe_ext = .exe
 cxx = g++
 cxxflags = -std=c++20 -Wall -Wextra -Wpedantic -O2
 includes = -Ilib/core -Ilib/math -Ilib/ecs -Ilib/motion -Ilib/engine -Ilib/scenario -Ilib/render -Ilib/situation_view
+# 单文件可覆盖（如 Vulkan TU 需 Khronos 头）；默认空。
+extra_flags =
 
 include ninja/rules.ninja
 include ninja/objects_common.ninja

@@ -2,6 +2,7 @@
 
 #include "cw/engine/engine.hpp"
 #include "cw/render/gl_window.hpp"
+#include "cw/render/graphics_types.hpp"
 #include "cw/scenario/scenario.hpp"
 #include "cw/situation_view/situation_view_shell.hpp"
 
@@ -36,6 +37,9 @@ constexpr unsigned kMenuSimSpeed05 = 0xE211;
 constexpr unsigned kMenuSimSpeed1 = 0xE212;
 constexpr unsigned kMenuSimSpeed2 = 0xE213;
 constexpr unsigned kMenuSimSpeed4 = 0xE214;
+
+constexpr unsigned kMenuGfxOpenGL = 0xE301;
+constexpr unsigned kMenuGfxVulkan = 0xE302;
 
 }  // namespace
 
@@ -140,6 +144,22 @@ void Win32SituationChrome::on_menu_command(unsigned cmd) {
         CheckMenuRadioItem(hsim, kMenuSimSpeed025, kMenuSimSpeed4, static_cast<UINT>(cmd), MF_BYCOMMAND);
       }
     }
+  } else if (cmd == kMenuGfxOpenGL) {
+    if (hmenu_gfx_ != nullptr) {
+      CheckMenuRadioItem(static_cast<HMENU>(hmenu_gfx_), kMenuGfxOpenGL, kMenuGfxVulkan, kMenuGfxOpenGL,
+                         MF_BYCOMMAND);
+    }
+    if (gfx_api_handler_) {
+      gfx_api_handler_(cw::render::GraphicsApi::OpenGL);
+    }
+  } else if (cmd == kMenuGfxVulkan) {
+    if (hmenu_gfx_ != nullptr) {
+      CheckMenuRadioItem(static_cast<HMENU>(hmenu_gfx_), kMenuGfxOpenGL, kMenuGfxVulkan, kMenuGfxVulkan,
+                         MF_BYCOMMAND);
+    }
+    if (gfx_api_handler_) {
+      gfx_api_handler_(cw::render::GraphicsApi::Vulkan);
+    }
   }
 }
 
@@ -158,6 +178,17 @@ void Win32SituationChrome::install_view_menu(cw::render::GlWindow& win, Situatio
               L"分屏左右比例尺同步");
   AppendMenuW(h_view, MF_STRING, static_cast<UINT_PTR>(kMenuTacticalAutoBounds),
               L"战术自动框选实体");
+  AppendMenuW(h_view, MF_SEPARATOR, 0, nullptr);
+  HMENU h_gfx = CreateMenu();
+  AppendMenuW(h_gfx, MF_STRING, static_cast<UINT_PTR>(kMenuGfxOpenGL), L"OpenGL");
+  AppendMenuW(h_gfx, MF_STRING, static_cast<UINT_PTR>(kMenuGfxVulkan), L"Vulkan");
+  AppendMenuW(h_view, MF_POPUP, reinterpret_cast<UINT_PTR>(h_gfx), L"Graphics API");
+  hmenu_gfx_ = h_gfx;
+  {
+    const unsigned gfx_chk =
+        (win.window_graphics_api() == cw::render::GraphicsApi::Vulkan) ? kMenuGfxVulkan : kMenuGfxOpenGL;
+    CheckMenuRadioItem(h_gfx, kMenuGfxOpenGL, kMenuGfxVulkan, gfx_chk, MF_BYCOMMAND);
+  }
   AppendMenuW(h_bar, MF_POPUP, reinterpret_cast<UINT_PTR>(h_view), L"View");
   SetMenu(static_cast<HWND>(hwnd_main_), h_bar);
   DrawMenuBar(static_cast<HWND>(hwnd_main_));
@@ -209,6 +240,20 @@ void Win32SituationChrome::sync_simulation_menu_from_engine() {
     }
   }
   CheckMenuRadioItem(h_sim, kMenuSimSpeed025, kMenuSimSpeed4, cmd, MF_BYCOMMAND);
+}
+
+void Win32SituationChrome::set_graphics_api_switch_handler(std::function<void(cw::render::GraphicsApi)> fn) noexcept {
+  gfx_api_handler_ = std::move(fn);
+}
+
+void Win32SituationChrome::sync_graphics_api_menu(cw::render::GraphicsApi current) noexcept {
+  if (hmenu_gfx_ == nullptr) {
+    return;
+  }
+  HMENU g = static_cast<HMENU>(hmenu_gfx_);
+  const unsigned id =
+      (current == cw::render::GraphicsApi::Vulkan) ? kMenuGfxVulkan : kMenuGfxOpenGL;
+  CheckMenuRadioItem(g, kMenuGfxOpenGL, kMenuGfxVulkan, id, MF_BYCOMMAND);
 }
 
 }  // namespace cw::situation_view

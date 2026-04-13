@@ -29,25 +29,25 @@ const char* error_code_str(Error e) noexcept {
 const char* error_message(Error e) noexcept {
   switch (e) {
     case Error::Ok:
-      return "成功";
+      return "Success";
     case Error::InvalidArgument:
-      return "参数无效或超出允许范围";
+      return "Invalid argument or value out of range";
     case Error::IOError:
-      return "文件或 I/O 操作失败";
+      return "File or I/O operation failed";
     case Error::Internal:
-      return "内部错误";
+      return "Internal error";
     case Error::NoSnapshot:
-      return "没有可恢复的快照（需先保存快照）";
+      return "No snapshot to restore (save a snapshot first)";
     case Error::ParseError:
-      return "想定文本或结构解析/校验失败";
+      return "Scenario text or structure parse/validation failed";
     case Error::WrongState:
-      return "当前引擎状态不允许该操作";
+      return "Operation not allowed in current engine state";
     case Error::NotAllowedWhenFederated:
-      return "联邦仿真模式下不允许保存或恢复快照";
+      return "Snapshot save/restore not allowed in federated simulation mode";
     case Error::UnsupportedScenarioVersion:
-      return "想定版本号不受当前引擎支持";
+      return "Scenario version not supported by this engine";
   }
-  return "未知错误码";
+  return "Unknown error code";
 }
 
 }  // namespace cw

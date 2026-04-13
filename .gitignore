@@ -1,3 +1,6 @@
 /build/
 /assets/
 /.cache/
+
+# MinGW Vulkan import library is generated locally (see scripts/bootstrap_vulkan_mingw.*).
+/third_party/vulkan-win32-mingw/libvulkan-1.dll.a

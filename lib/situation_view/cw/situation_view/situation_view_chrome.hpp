@@ -1,5 +1,8 @@
 #pragma once
 
+#include "cw/render/graphics_types.hpp"
+
+#include <functional>
 #include <memory>
 
 namespace cw::render {
@@ -26,6 +29,14 @@ class SituationViewChrome {
   virtual void set_simulation_targets(cw::engine::Engine* engine,
                                       const cw::scenario::Scenario* scenario) noexcept = 0;
   virtual void sync_simulation_menu_from_engine() = 0;
+
+  /// 用户在菜单中选择 OpenGL / Vulkan 时调用（由 Win32 实现发出）。
+  virtual void set_graphics_api_switch_handler(std::function<void(cw::render::GraphicsApi)> fn) noexcept {
+    static_cast<void>(fn);
+  }
+  virtual void sync_graphics_api_menu(cw::render::GraphicsApi current) noexcept {
+    static_cast<void>(current);
+  }
 };
 
 /// 无原生菜单时的空实现（如未接入 GUI 的 Linux 构建占位）。
@@ -35,6 +46,12 @@ class SituationViewChromeNull final : public SituationViewChrome {
   void install_simulation_menu(cw::render::GlWindow&, SituationViewShell&) override {}
   void set_simulation_targets(cw::engine::Engine*, const cw::scenario::Scenario*) noexcept override {}
   void sync_simulation_menu_from_engine() override {}
+  void set_graphics_api_switch_handler(std::function<void(cw::render::GraphicsApi)> fn) noexcept override {
+    static_cast<void>(fn);
+  }
+  void sync_graphics_api_menu(cw::render::GraphicsApi current) noexcept override {
+    static_cast<void>(current);
+  }
 };
 
 [[nodiscard]] std::unique_ptr<SituationViewChrome> create_situation_view_chrome();

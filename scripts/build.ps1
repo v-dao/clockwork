@@ -3,6 +3,15 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 Set-Location $Root
 
+$vkLib = Join-Path $Root "third_party/vulkan-win32-mingw/libvulkan-1.dll.a"
+if (-not (Test-Path $vkLib)) {
+  Write-Host "MinGW Vulkan import library missing; running scripts/bootstrap_vulkan_mingw.ps1 ..."
+  & "$PSScriptRoot/bootstrap_vulkan_mingw.ps1"
+  if ($LASTEXITCODE -ne 0) {
+    exit $LASTEXITCODE
+  }
+}
+
 $ninja = if ($env:NINJA) { $env:NINJA } else { "ninja" }
 & $ninja
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

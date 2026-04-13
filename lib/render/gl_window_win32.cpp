@@ -37,6 +37,8 @@ typedef HGLRC(WINAPI* PFN_wglCreateContextAttribsARB)(HDC, HGLRC, const int*);
 #include <string>
 #include <vector>
 
+#include "cw/render/graphics_types.hpp"
+
 namespace cw::render {
 
 namespace {
@@ -181,6 +183,27 @@ bool GlWindowWin32::open(const GlWindowConfig& cfg) {
     return false;
   }
 
+  win_api_ = cfg.window_graphics_api;
+
+  if (win_api_ == GraphicsApi::Vulkan) {
+    hwnd_ = hwnd;
+    hdc_ = nullptr;
+    hglrc_ = nullptr;
+    offscreen_ = std::make_unique<GlOffscreenWin32>();
+    if (!offscreen_->initialize()) {
+      offscreen_.reset();
+      DestroyWindow(hwnd);
+      return false;
+    }
+    open_ = true;
+    ShowWindow(hwnd, SW_SHOWMAXIMIZED);
+    UpdateWindow(hwnd);
+    RECT cr{};
+    GetClientRect(hwnd, &cr);
+    platform_notify_client_size(cr.right - cr.left, cr.bottom - cr.top);
+    return true;
+  }
+
   HDC hdc = GetDC(hwnd);
   if (hdc == nullptr) {
     DestroyWindow(hwnd);
@@ -268,12 +291,14 @@ void GlWindowWin32::close() noexcept {
   if (!open_) {
     return;
   }
+  offscreen_.reset();
+
   HGLRC hglrc = static_cast<HGLRC>(hglrc_);
   HDC hdc = static_cast<HDC>(hdc_);
   HWND hwnd = static_cast<HWND>(hwnd_);
 
-  wglMakeCurrent(nullptr, nullptr);
   if (hglrc != nullptr) {
+    wglMakeCurrent(nullptr, nullptr);
     wglDeleteContext(hglrc);
   }
   if (hwnd != nullptr && hdc != nullptr) {
@@ -321,8 +346,11 @@ void GlWindowWin32::sync_client_size_from_window() noexcept {
 void* GlWindowWin32::native_window_handle() const noexcept { return hwnd_; }
 
 unsigned GlWindowWin32::create_hud_bitmap_font_lists() noexcept {
+  if (win_api_ == GraphicsApi::Vulkan && offscreen_ != nullptr) {
+    return offscreen_->create_hud_bitmap_font_lists();
+  }
   HDC hdc = static_cast<HDC>(hdc_);
-  if (hdc == nullptr) {
+  if (hdc == nullptr || hglrc_ == nullptr) {
     return 0;
   }
   const GLuint base = glGenLists(96);
@@ -350,7 +378,14 @@ unsigned GlWindowWin32::create_hud_bitmap_font_lists() noexcept {
 }
 
 void GlWindowWin32::destroy_hud_bitmap_font_lists(unsigned base, int count) noexcept {
-  if (base != 0U && count > 0) {
+  if (base == 0U || count <= 0) {
+    return;
+  }
+  if (win_api_ == GraphicsApi::Vulkan && offscreen_ != nullptr) {
+    offscreen_->destroy_hud_bitmap_font_lists(base, count);
+    return;
+  }
+  if (hglrc_ != nullptr) {
     glDeleteLists(static_cast<GLuint>(base), count);
   }
 }

@@ -1,17 +1,22 @@
 #pragma once
 
+#include "cw/render/graphics_types.hpp"
+
 #include <memory>
 
 namespace cw::render {
 
+class GlOffscreenWin32;
+
 /// Win32 菜单项选中时回调（`cmd_id` 为 `WM_COMMAND` 的 `LOWORD(wParam)`；其它平台可映射到等价事件）。
 using MenuCommandFn = void (*)(unsigned cmd_id, void* user_data);
 
-/// 最小 OpenGL 窗口配置。
+/// 窗口创建配置。`window_graphics_api` 决定是否在客户区创建 WGL 上下文（OpenGL）或仅原生面（Vulkan）。
 struct GlWindowConfig {
   int width = 1024;
   int height = 768;
   const char* title_utf8 = "Clockwork";
+  GraphicsApi window_graphics_api = GraphicsApi::OpenGL;
 };
 
 /// 主循环快捷键边沿（与 `GetAsyncKeyState` &0x1 语义一致：自上次查询以来是否有过一次按下）。
@@ -34,6 +39,8 @@ class GlWindow {
 
   [[nodiscard]] virtual bool open(const GlWindowConfig& cfg) = 0;
   virtual void close() noexcept = 0;
+
+  [[nodiscard]] virtual GraphicsApi window_graphics_api() const noexcept { return GraphicsApi::OpenGL; }
 
   [[nodiscard]] bool is_open() const noexcept { return open_; }
 
@@ -59,6 +66,9 @@ class GlWindow {
 
   /// 原生窗口句柄：Win32 为 `HWND`，其它平台为约定类型指针；无则 `nullptr`。
   [[nodiscard]] virtual void* native_window_handle() const noexcept { return nullptr; }
+
+  /// Win32 + Vulkan：离屏 WGL/FBO，用于与 Vulkan 交换链合成；其它配置返回 `nullptr`。
+  [[nodiscard]] virtual GlOffscreenWin32* offscreen_gl() noexcept { return nullptr; }
 
   /// 使用当前 GL 上下文创建位图字体显示列表（如 WGL）；失败返回 0。
   [[nodiscard]] virtual unsigned create_hud_bitmap_font_lists() noexcept { return 0; }
