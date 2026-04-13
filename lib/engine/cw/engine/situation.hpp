@@ -1,6 +1,7 @@
 #pragma once
 
 #include "cw/engine/types.hpp"
+#include "cw/scenario/scenario.hpp"
 #include "cw/vec3.hpp"
 
 #include <string>
@@ -45,6 +46,14 @@ struct SituationSnapshot {
   EngineState engine_state = EngineState::Uninitialized;
   std::vector<EntitySituation> entities;
   std::vector<SensorDetection> sensor_detections;
+};
+
+/// 显示/录制等**只读**消费边界：当前帧态势 + 想定静态图层（不含仿真控制 API）。
+/// 由 `Engine::situation_presentation()` 绑定引擎内部存储；调用方勿长期持有跨 `step()` 的引用（见 A10 / architecture）。
+struct SituationPresentation {
+  const SituationSnapshot& situation;
+  const std::vector<cw::scenario::ScenarioRoute>& routes;
+  const std::vector<cw::scenario::ScenarioAirspace>& airspaces;
 };
 
 }  // namespace cw::engine

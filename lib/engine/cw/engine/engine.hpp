@@ -49,6 +49,11 @@ class Engine {
 
   [[nodiscard]] const SituationSnapshot& situation() const noexcept { return snapshot_; }
 
+  /// 供态势显示等只读路径；勿缓存指针跨越本线程对 `step()` / 控制 API 的调用。
+  [[nodiscard]] SituationPresentation situation_presentation() const noexcept {
+    return SituationPresentation{snapshot_, routes_, airspaces_};
+  }
+
   /// 想定静态图层与通信网（阶段 2 运行时副本，供显示/模型后续消费）。
   [[nodiscard]] const std::vector<cw::scenario::ScenarioRoute>& routes() const noexcept {
     return routes_;
@@ -73,7 +78,11 @@ class Engine {
   void run_mover_step(float dt);
   void compute_sensor_detections();
   void init_entity_runtime_fields(EntityRecord& rec);
+  /// 全量：从 `entities_` 填充 `snapshot_.entities` 并重算 `sensor_detections`。
   void aggregate_situation();
+  /// 轻量：仅同步 `sim_time_` / `time_scale_` / `state_` 到 `snapshot_`（实体与探测不变）。
+  /// 仅在 `entities_` 相对上次全量聚合未增删、且位姿未在引擎内被改写时调用。
+  void patch_situation_meta();
 
   struct StateCheckpoint {
     double fixed_dt{};

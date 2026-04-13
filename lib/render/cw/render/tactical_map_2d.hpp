@@ -1,6 +1,6 @@
 #pragma once
 
-#include "cw/engine/engine.hpp"
+#include "cw/engine/situation.hpp"
 
 namespace cw::render {
 
@@ -37,19 +37,20 @@ public:
 
   void reset_camera() noexcept;
   void apply_wheel_zoom(int wheel_delta) noexcept;
-  /// 为真时 `expand_bounds_from_engine` 把仿真实体（及速度提示点）纳入外包盒；默认假（仅航线/空域等静态层）。
+  /// 为真时 `expand_bounds_from_presentation` 把仿真实体（及速度提示点）纳入外包盒；默认假（仅航线/空域等静态层）。
   void set_auto_bounds_include_entities(bool enabled) noexcept { auto_bounds_include_entities_ = enabled; }
   [[nodiscard]] bool auto_bounds_include_entities() const noexcept { return auto_bounds_include_entities_; }
-  void expand_bounds_from_engine(const cw::engine::Engine& eng, MercatorBounds& b) const;
+  void expand_bounds_from_presentation(const cw::engine::SituationPresentation& world, MercatorBounds& b) const;
 
   void compute_ortho_frustum(const MercatorBounds& b, int vp_w, int vp_h, MercatorOrthoFrustum& f) const;
   void compute_interactive_frustum(const MercatorBounds& b, int vp_w, int vp_h, MercatorOrthoFrustum& tactical);
-  void apply_mouse_pan_drag(const cw::engine::Engine& eng, int vp_w, int vp_h, int dx_win, int dy_win);
+  void apply_mouse_pan_drag(const cw::engine::SituationPresentation& world, int vp_w, int vp_h, int dx_win,
+                            int dy_win);
   /// 将当前视锥中心（墨卡托米）对齐到给定经纬度，保持 `zoom` 不变；用于分屏时与三维地球中心一致。
-  void set_frustum_center_lonlat(const cw::engine::Engine& eng, int vp_w, int vp_h, double lon_deg,
-                                  double lat_deg);
+  void set_frustum_center_lonlat(const cw::engine::SituationPresentation& world, int vp_w, int vp_h,
+                                 double lon_deg, double lat_deg);
   /// 调整 `zoom`，使视口中心处东西向地面距离（`(r-l)*cos(纬度)`，Web 墨卡托近似）接近 `physical_ew_m`；`pan` 不变。
-  void set_visible_ground_ew_meters_at_lat(const cw::engine::Engine& eng, int vp_w, int vp_h,
+  void set_visible_ground_ew_meters_at_lat(const cw::engine::SituationPresentation& world, int vp_w, int vp_h,
                                            double physical_ew_m, double center_lat_deg);
 
   static void expand_frustum_for_world_basemap(const MercatorOrthoFrustum& tactical, MercatorOrthoFrustum& map);

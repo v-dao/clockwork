@@ -1,7 +1,6 @@
 #include "cw/render/tactical_map_2d.hpp"
 
 #include "cw/render/mercator_geo.hpp"
-#include "cw/scenario/parse.hpp"
 
 #include <GL/gl.h>
 
@@ -35,8 +34,9 @@ void TacticalMercatorMap::apply_wheel_zoom(int wheel_delta) noexcept {
   cam_.zoom = std::clamp(cam_.zoom, 0.0002F, 400.F);
 }
 
-void TacticalMercatorMap::expand_bounds_from_engine(const cw::engine::Engine& eng, MercatorBounds& b) const {
-  const auto& snap = eng.situation();
+void TacticalMercatorMap::expand_bounds_from_presentation(const cw::engine::SituationPresentation& world,
+                                                            MercatorBounds& b) const {
+  const auto& snap = world.situation;
   if (auto_bounds_include_entities_) {
     for (const auto& e : snap.entities) {
       b.add_xy(e.position.x, e.position.y);
@@ -48,12 +48,12 @@ void TacticalMercatorMap::expand_bounds_from_engine(const cw::engine::Engine& en
       }
     }
   }
-  for (const auto& r : eng.routes()) {
+  for (const auto& r : world.routes) {
     for (const auto& w : r.waypoints) {
       b.add_xy(w.x, w.y);
     }
   }
-  for (const auto& a : eng.airspaces()) {
+  for (const auto& a : world.airspaces) {
     if (a.kind == cw::scenario::AirspaceKind::Box) {
       b.add_xy(a.box_min.x, a.box_min.y);
       b.add_xy(a.box_max.x, a.box_max.y);
@@ -142,13 +142,13 @@ void TacticalMercatorMap::compute_interactive_frustum(const MercatorBounds& b, i
   tactical.t = cy + hh;
 }
 
-void TacticalMercatorMap::apply_mouse_pan_drag(const cw::engine::Engine& eng, int vp_w, int vp_h, int dx_win,
-                                                 int dy_win) {
+void TacticalMercatorMap::apply_mouse_pan_drag(const cw::engine::SituationPresentation& world, int vp_w, int vp_h,
+                                               int dx_win, int dy_win) {
   if (dx_win == 0 && dy_win == 0) {
     return;
   }
   MercatorBounds b{};
-  expand_bounds_from_engine(eng, b);
+  expand_bounds_from_presentation(world, b);
   MercatorOrthoFrustum tactical{};
   compute_interactive_frustum(b, vp_w, vp_h, tactical);
   const float wx = tactical.r - tactical.l;
@@ -159,10 +159,10 @@ void TacticalMercatorMap::apply_mouse_pan_drag(const cw::engine::Engine& eng, in
   cam_.pan_my += static_cast<float>(dy_win) * mpy;
 }
 
-void TacticalMercatorMap::set_frustum_center_lonlat(const cw::engine::Engine& eng, int vp_w, int vp_h,
-                                                    double lon_deg, double lat_deg) {
+void TacticalMercatorMap::set_frustum_center_lonlat(const cw::engine::SituationPresentation& world, int vp_w,
+                                                    int vp_h, double lon_deg, double lat_deg) {
   MercatorBounds b{};
-  expand_bounds_from_engine(eng, b);
+  expand_bounds_from_presentation(world, b);
   MercatorOrthoFrustum fit{};
   compute_ortho_frustum(b, vp_w, vp_h, fit);
   const double cx_base = static_cast<double>((fit.l + fit.r) * 0.5F);
@@ -184,8 +184,8 @@ void TacticalMercatorMap::set_frustum_center_lonlat(const cw::engine::Engine& en
   compute_interactive_frustum(b, vp_w, vp_h, dummy);
 }
 
-void TacticalMercatorMap::set_visible_ground_ew_meters_at_lat(const cw::engine::Engine& eng, int vp_w,
-                                                              int vp_h, double physical_ew_m,
+void TacticalMercatorMap::set_visible_ground_ew_meters_at_lat(const cw::engine::SituationPresentation& world,
+                                                              int vp_w, int vp_h, double physical_ew_m,
                                                               double center_lat_deg) {
   if (physical_ew_m < 1.0 || vp_w < 1 || vp_h < 1) {
     return;
@@ -196,7 +196,7 @@ void TacticalMercatorMap::set_visible_ground_ew_meters_at_lat(const cw::engine::
   const double target_tw = physical_ew_m / cos_lat;
 
   MercatorBounds b{};
-  expand_bounds_from_engine(eng, b);
+  expand_bounds_from_presentation(world, b);
   MercatorOrthoFrustum fit{};
   compute_ortho_frustum(b, vp_w, vp_h, fit);
   const float fit_w = fit.r - fit.l;

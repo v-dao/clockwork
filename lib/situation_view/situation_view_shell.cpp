@@ -52,8 +52,8 @@ void SituationViewShell::reset_view_camera() noexcept {
   picked_entity_id_.reset();
 }
 
-void SituationViewShell::process_entity_pick_mouse(cw::engine::Engine& eng, int client_w, int client_h,
-                                                   int mouse_x, int mouse_y, bool left_down,
+void SituationViewShell::process_entity_pick_mouse(const cw::engine::SituationPresentation& world, int client_w,
+                                                   int client_h, int mouse_x, int mouse_y, bool left_down,
                                                    bool left_was_down) {
   if (left_down && !left_was_down) {
     pick_down_mx_ = mouse_x;
@@ -68,7 +68,7 @@ void SituationViewShell::process_entity_pick_mouse(cw::engine::Engine& eng, int 
     }
   }
   if (!left_down && left_was_down && !pick_drag_cancel_) {
-    if (auto id = try_pick_entity_at_screen(eng, *this, client_w, client_h, mouse_x, mouse_y)) {
+    if (auto id = try_pick_entity_at_screen(world, *this, client_w, client_h, mouse_x, mouse_y)) {
       picked_entity_id_ = std::move(id);
     } else {
       picked_entity_id_.reset();
@@ -76,8 +76,8 @@ void SituationViewShell::process_entity_pick_mouse(cw::engine::Engine& eng, int 
   }
 }
 
-void SituationViewShell::sync_globe_from_tactical_viewport(cw::engine::Engine& engine, int client_w,
-                                                           int client_h,
+void SituationViewShell::sync_globe_from_tactical_viewport(const cw::engine::SituationPresentation& world,
+                                                           int client_w, int client_h,
                                                            int tactical_frustum_vp_w) noexcept {
   if (client_w < 1 || client_h < 1) {
     return;
@@ -85,7 +85,7 @@ void SituationViewShell::sync_globe_from_tactical_viewport(cw::engine::Engine& e
   const int tw = tactical_frustum_vp_w < 1 ? client_w : tactical_frustum_vp_w;
   globe_.clear_arcball_pending();
   cw::render::MercatorBounds b{};
-  tactical_.expand_bounds_from_engine(engine, b);
+  tactical_.expand_bounds_from_presentation(world, b);
   cw::render::MercatorOrthoFrustum tact{};
   tactical_.compute_interactive_frustum(b, tw, client_h, tact);
   const double tcx = static_cast<double>((tact.l + tact.r) * 0.5F);
@@ -103,8 +103,9 @@ void SituationViewShell::sync_globe_from_tactical_viewport(cw::engine::Engine& e
   }
 }
 
-void SituationViewShell::sync_tactical_from_globe_viewport(cw::engine::Engine& engine, int client_w,
-                                                           int client_h, int globe_vp_w_for_ew_readout) noexcept {
+void SituationViewShell::sync_tactical_from_globe_viewport(const cw::engine::SituationPresentation& world,
+                                                           int client_w, int client_h,
+                                                           int globe_vp_w_for_ew_readout) noexcept {
   if (client_w < 1 || client_h < 1) {
     return;
   }
@@ -114,9 +115,9 @@ void SituationViewShell::sync_tactical_from_globe_viewport(cw::engine::Engine& e
   double g_lat = 0.;
   globe_.viewport_center_lonlat_from_pose(g_lon, g_lat);
   const double ew = globe_.visible_ground_ew_meters(gw, client_h);
-  tactical_.set_frustum_center_lonlat(engine, client_w, client_h, g_lon, g_lat);
+  tactical_.set_frustum_center_lonlat(world, client_w, client_h, g_lon, g_lat);
   if (ew > 1.0) {
-    tactical_.set_visible_ground_ew_meters_at_lat(engine, client_w, client_h, ew, g_lat);
+    tactical_.set_visible_ground_ew_meters_at_lat(world, client_w, client_h, ew, g_lat);
   }
 }
 
@@ -171,7 +172,8 @@ void SituationViewShell::on_win32_menu_command(unsigned cmd) {
       const int split_x = std::max(1, client_w / 2);
       const int right_w = std::max(1, client_w - split_x);
       const int globe_ew_w = (prev_mode == ViewMode::Split2dGlobe) ? right_w : client_w;
-      sync_tactical_from_globe_viewport(*viewport_sync_engine_, client_w, client_h, globe_ew_w);
+      sync_tactical_from_globe_viewport(viewport_sync_engine_->situation_presentation(), client_w, client_h,
+                                        globe_ew_w);
     }
   } else if (cmd == kMenuView3d) {
     view_mode_ = ViewMode::Globe3d;
@@ -182,7 +184,8 @@ void SituationViewShell::on_win32_menu_command(unsigned cmd) {
         (prev_mode == ViewMode::Tactical2D || prev_mode == ViewMode::Split2dGlobe)) {
       const int split_x = std::max(1, client_w / 2);
       const int tactical_tw = (prev_mode == ViewMode::Split2dGlobe) ? split_x : client_w;
-      sync_globe_from_tactical_viewport(*viewport_sync_engine_, client_w, client_h, tactical_tw);
+      sync_globe_from_tactical_viewport(viewport_sync_engine_->situation_presentation(), client_w, client_h,
+                                        tactical_tw);
     }
   } else if (cmd == kMenuViewSplit2d3d) {
     view_mode_ = ViewMode::Split2dGlobe;
@@ -305,7 +308,8 @@ void SituationViewShell::install_win32_simulation_menu(cw::render::GlWindow&) {}
 void SituationViewShell::sync_simulation_menu_from_engine() {}
 #endif
 
-void SituationViewShell::process_mouse_drag(cw::render::GlWindow& win, cw::engine::Engine& engine,
+void SituationViewShell::process_mouse_drag(cw::render::GlWindow& win,
+                                            const cw::engine::SituationPresentation& world,
                                             bool& split_left_driven, bool& split_right_driven) {
   const int cw = win.client_width();
   const int ch = win.client_height();
@@ -324,7 +328,7 @@ void SituationViewShell::process_mouse_drag(cw::render::GlWindow& win, cw::engin
       if (view_mode_ == ViewMode::Tactical2D || split_left) {
         const int dx = mx - drag_prev_mx_;
         const int dy = my - drag_prev_my_;
-        tactical_.apply_mouse_pan_drag(engine, tact_win.w, ch, dx, dy);
+        tactical_.apply_mouse_pan_drag(world, tact_win.w, ch, dx, dy);
         if (view_mode_ == ViewMode::Split2dGlobe && (dx != 0 || dy != 0)) {
           split_left_driven = true;
         }
@@ -388,8 +392,8 @@ void SituationViewShell::process_wheel(cw::render::GlWindow& win, bool& split_le
   }
 }
 
-void SituationViewShell::pre_draw_split_sync(cw::engine::Engine& engine, int client_w, int client_h,
-                                             bool split_left_driven, bool split_right_driven) {
+void SituationViewShell::pre_draw_split_sync(const cw::engine::SituationPresentation& world, int client_w,
+                                             int client_h, bool split_left_driven, bool split_right_driven) {
   if (view_mode_ != ViewMode::Split2dGlobe) {
     split_matched_lonlat_grid_step_deg_ = 0.;
     return;
@@ -404,7 +408,7 @@ void SituationViewShell::pre_draw_split_sync(cw::engine::Engine& engine, int cli
     glViewport(0, 0, client_w, client_h);
   }
   cw::render::MercatorBounds b{};
-  tactical_.expand_bounds_from_engine(engine, b);
+  tactical_.expand_bounds_from_presentation(world, b);
   cw::render::MercatorOrthoFrustum tact{};
   tactical_.compute_interactive_frustum(b, tact_win.w, tact_win.h, tact);
   {
@@ -433,10 +437,10 @@ void SituationViewShell::pre_draw_split_sync(cw::engine::Engine& engine, int cli
       globe_.set_camera_distance_for_visible_ew_meters(right_w, client_h, ew);
     }
   };
-  auto sync_scale_right_to_left = [this, &engine, split_x, client_h, g_lat, right_w]() {
+  auto sync_scale_right_to_left = [this, &world, split_x, client_h, g_lat, right_w]() {
     const double ew = globe_.visible_ground_ew_meters(right_w, client_h);
     if (ew > 1.0) {
-      tactical_.set_visible_ground_ew_meters_at_lat(engine, split_x, client_h, ew, g_lat);
+      tactical_.set_visible_ground_ew_meters_at_lat(world, split_x, client_h, ew, g_lat);
     }
   };
 
@@ -452,7 +456,7 @@ void SituationViewShell::pre_draw_split_sync(cw::engine::Engine& engine, int cli
       sync_scale_left_to_right();
     }
   } else if (only_right) {
-    tactical_.set_frustum_center_lonlat(engine, split_x, client_h, g_lon, g_lat);
+    tactical_.set_frustum_center_lonlat(world, split_x, client_h, g_lon, g_lat);
     if (split_scale_sync_enabled_) {
       sync_scale_right_to_left();
     }

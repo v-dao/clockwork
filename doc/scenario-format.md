@@ -237,6 +237,6 @@ entity_mparam bravo signature rcs_m2 12.5
 | 航线   | `ScenarioRoute`（`waypoints`）                         |
 
 
-解析入口：`cw::scenario::parse_scenario_file(path, out, diag)`、`parse_scenario_text(text, out, diag)`（`diag` 可为空；声明见 `cw/scenario/parse.hpp`）。失败且 `diag != nullptr` 时 **`ParseDiagnostics::line` 为 1-based 物理行**（空行与 `#` 注释行仍占行号）。**`comm_link` 引用未声明节点、loss/delay/bw 越界**等已在解析阶段带行号报错。**收尾结构校验**失败（如多边形顶点不足、仅缺 `version` 等）时常见 **`line` 为 0**。同一 `entity` 名称出现第二次会在该行报错。
+解析入口：`cw::scenario::parse_scenario_file(path, out, diag)`、`parse_scenario_text(text, out, diag)`（`diag` 可为空；声明见 `cw/scenario/parse.hpp`）。失败且 `diag != nullptr` 时除 **`ParseDiagnostics::line`**（1-based 物理行；空行与 `#` 注释行仍占行号）外，还写入稳定整型 **`ParseDiagnostics::subcode`**（`cw::scenario::ParseSubcode`，与 `std::uint16_t` 同宽），便于工具区分：如 **`UnknownCommand`**、**`DuplicateEntityName`**、**`UnknownRouteId`**、**`CommLinkUnknownEndpoint`**、**`MissingVersion`**、**`PolygonTooFewVertices`** 等；完整枚举以头文件为准。**收尾结构校验**（`validate_scenario`）失败时 **`line` 为 0**，由 **`subcode`** 标明原因（如重复航线 id、多边形顶点不足）。
 
-小型有效/无效语料与 `engine_tests` 对拍见目录 **`scenarios/corpus/`**。**`ParseDiagnostics::line`**：多数单行语法与引用错误为该行1-based 行号；**重复的** `route` /空域 / `comm_node` id、**`comm_node … entity` 无效**、**`comm_link` 端点未先声明**、**通信数值越界** 等亦在当前行报错。缺 `version`、多边形顶点过少等仍常见 **`line == 0`**。
+小型有效/无效语料与 `engine_tests` 对拍见目录 **`scenarios/corpus/`**。**`ParseDiagnostics::line`**：多数单行语法与引用错误为该行 1-based 行号；**重复的** `route` / 空域 / `comm_node` id、**`comm_node … entity` 绑定未知实体**、**`comm_link` 端点未先声明**、**通信数值越界** 等亦在当前行报错。缺 `version`、多边形顶点过少等仍常见 **`line == 0`**（配合 **`subcode`** 区分）。

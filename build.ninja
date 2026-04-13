@@ -16,4 +16,4 @@ include ninja/targets_headless.ninja
 include ninja/targets_gui_win32.ninja
 include ninja/targets_metadata.ninja
 
-default $smoke_bin $verify_bin $engine_demo_bin $scenario_demo_bin $model_demo_bin $engine_tests_bin $situation_view_bin $builddir/compile_commands.json
+default $smoke_bin $engine_demo_bin $scenario_demo_bin $model_demo_bin $engine_tests_bin $situation_view_bin $builddir/compile_commands.json

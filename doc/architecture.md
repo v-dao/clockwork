@@ -97,6 +97,7 @@ Lua 与可视化蓝图作为**控制逻辑宿主**：读取可暴露的实体状
 - **权威仿真时钟**：实现中 `Engine` 的 `sim_time_`、`fixed_dt_`、`time_scale_` 均为 `double`；写入态势的 `SituationSnapshot::sim_time` / `time_scale` 与之一致（见 [api.md](api.md) 第 2.3 节）。
 - **积分与几何**：每步传入机动等模型的标量步长为 `dt = static_cast<float>(fixed_dt_ * time_scale_)`；`Vec3` 及多数几何/运动中间量为 `float`。含义是：**时钟与累加用双精度减轻长期漂移**，**步内状态与带宽敏感路径保持单精度**。
 - **步进公式与顺序（单机 `Running`）**：每步在模型调度之后执行 `sim_time_ += fixed_dt_ * time_scale_`，再调用 `aggregate_situation()` 填充实体态势并在末尾执行传感器探测；因此**当前帧快照中的 `sim_time` 已反映本步时钟增量**（与仅聚合、不 `step` 的路径一致）。
+- **控制面与快照**：`start` / `pause` / `end` / `set_time_scale` 在实体集合与引擎内运动学相对上次全量聚合未变时，仅同步 `SituationSnapshot` 的 `sim_time` / `time_scale` / `engine_state`（`patch_situation_meta`），避免重复拷贝实体与重算传感器；`initialize`、`apply_scenario`、`restore_snapshot`、`add_entity` 与 `step()` 仍触发全量 `aggregate_situation()`。
 - **确定性**：在相同源码、工具链与输入想定下，固定步数应得到相同 IEEE 浮点结果；跨编译器/平台仍可能有细微差别。仓库提供 `cw::engine::situation_digest()`（对快照做规范排序后的 FNV-1a 摘要）及 `engine_tests` 中的**固定步数金样**回归；若有意变更数值行为，应同步更新金样并在提交说明中注明。
 
 ---
@@ -138,6 +139,6 @@ Lua 与可视化蓝图作为**控制逻辑宿主**：读取可暴露的实体状
 
 ## 7. 已知设计取舍与演进方向
 
-当前实现优先打通单机 MVP：想定 → 引擎 → 态势快照 → `situation_view`。在此前提下存在**刻意的简化**（如 `aggregate_situation` 高频全量拷贝、传感器网格按全局最大射程定宽等）。模型类型枚举由 `lib/core/cw/model_kind.hpp`（`cw::ModelKind`）供想定与引擎共用。**不表示长期形态已定**。
+当前实现优先打通单机 MVP：想定 → 引擎 → 态势快照 → `situation_view`。在此前提下存在**刻意的简化**（如每步 `step()` 仍全量填充实体快照、传感器网格按全局最大射程定宽等）。控制面仅改状态/倍速时用 `patch_situation_meta()` 避免重复拷贝与传感器重算（见 **A3**）。模型类型枚举由 `lib/core/cw/model_kind.hpp`（`cw::ModelKind`）供想定与引擎共用。**不表示长期形态已定**。
 
-更细的条目化讨论（`Engine` 拆分、快照与传感器耦合、热路径缓存、解析子码、`comm_link` 顺序策略、检查点内存、运行程序边界、蓝图排期与代码现状等）见 [code-review-summary.md](code-review-summary.md) **「架构与设计评审补充（待迭代）」**。
+更细的条目化讨论见 [code-review-summary.md](code-review-summary.md) **「架构与设计评审补充（待迭代）」**（含快照与传感器耦合、热路径、`Engine` 多 TU 组织 **A2**、解析子码等；想定 **`comm_node`/`comm_link` 顺序**见 **A7**；**A10** 态势显示只读边界见 `SituationPresentation`）。

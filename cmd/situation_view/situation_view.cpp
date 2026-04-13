@@ -261,7 +261,8 @@ int main(int argc, char** argv) {
     bool split_left_driven = false;
     bool split_right_driven = false;
 
-    shell.process_mouse_drag(win, engine, split_left_driven, split_right_driven);
+    /// 拖动平移在 `step()` 之前执行，外包络与上一帧末态势一致（与原 `Engine&` 语义相同）。
+    shell.process_mouse_drag(win, engine.situation_presentation(), split_left_driven, split_right_driven);
 
     QueryPerformanceCounter(&now);
     const double dt =
@@ -287,21 +288,23 @@ int main(int argc, char** argv) {
       ++n;
     }
 
+    const cw::engine::SituationPresentation world = engine.situation_presentation();
+
     shell.process_wheel(win, split_left_driven, split_right_driven);
 
 #ifdef _WIN32
     win.make_current();
     if (!map_only) {
       const bool left_down = win.left_button_down();
-      shell.process_entity_pick_mouse(engine, cw, ch, win.mouse_client_x(), win.mouse_client_y(), left_down,
+      shell.process_entity_pick_mouse(world, cw, ch, win.mouse_client_x(), win.mouse_client_y(), left_down,
                                       prev_left_down);
       prev_left_down = left_down;
     }
 #endif
     glViewport(0, 0, cw, ch);
-    shell.pre_draw_split_sync(engine, cw, ch, split_left_driven, split_right_driven);
+    shell.pre_draw_split_sync(world, cw, ch, split_left_driven, split_right_driven);
 
-    cw::situation_view::draw_frame(engine, shell, cw, ch, win.mouse_client_x(), win.mouse_client_y(),
+    cw::situation_view::draw_frame(world, shell, cw, ch, win.mouse_client_x(), win.mouse_client_y(),
                                    world_vec.valid() ? &world_vec : nullptr,
                                    world_tex.valid() ? world_tex.gl_name : 0U,
                                    coastlines.valid() ? &coastlines : nullptr,

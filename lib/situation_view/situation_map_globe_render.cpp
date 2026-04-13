@@ -11,7 +11,7 @@
 #include "cw/situation_view/situation_map_globe_render.hpp"
 
 #include "cw/ecs/entity_coordinate_system.hpp"
-#include "cw/engine/engine.hpp"
+#include "cw/engine/situation.hpp"
 #include "cw/engine/types.hpp"
 #include "cw/scenario/scenario.hpp"
 #include "cw/render/globe_program.hpp"
@@ -165,9 +165,9 @@ void draw_world_underlay(const cw::render::MercatorOrthoFrustum& f, unsigned tex
   glColor4f(1.F, 1.F, 1.F, 1.F);
 }
 
-void draw_airspaces(const cw::engine::Engine& eng, float cx_ref) {
+void draw_airspaces(const cw::engine::SituationPresentation& world, float cx_ref) {
   glLineWidth(1.F);
-  for (const auto& a : eng.airspaces()) {
+  for (const auto& a : world.airspaces) {
     if (a.kind == cw::scenario::AirspaceKind::Box) {
       glColor3f(0.25F, 0.55F, 0.75F);
       glBegin(GL_LINE_LOOP);
@@ -187,7 +187,7 @@ void draw_airspaces(const cw::engine::Engine& eng, float cx_ref) {
   }
 }
 
-void draw_routes(const cw::engine::Engine& eng, float cx_ref, float world_width_m, float world_height_m,
+void draw_routes(const cw::engine::SituationPresentation& world, float cx_ref, float world_width_m, float world_height_m,
                    int vp_w, int vp_h, GLuint waypoint_font_base) {
   const float W = cw::render::TacticalMercatorMap::kWorldWidthM;
   const float vpwf = static_cast<float>(std::max(1, vp_w));
@@ -200,7 +200,7 @@ void draw_routes(const cw::engine::Engine& eng, float cx_ref, float world_width_
   constexpr int kCircleSeg = 20;
   constexpr float kTwoPi = 6.2831855F;
 
-  for (const auto& r : eng.routes()) {
+  for (const auto& r : world.routes) {
     if (r.waypoints.size() < 2) {
       continue;
     }
@@ -268,14 +268,14 @@ void draw_routes(const cw::engine::Engine& eng, float cx_ref, float world_width_
   }
 }
 
-void draw_detections(const cw::engine::Engine& eng,
+void draw_detections(const cw::engine::SituationPresentation& world,
                      const std::unordered_map<cw::engine::EntityId, cw::math::Vec3>& pos_by_id,
                      float cx_ref) {
   glLineWidth(1.F);
   glColor3f(0.95F, 0.85F, 0.2F);
   glEnable(GL_LINE_STIPPLE);
   glLineStipple(1, 0xAAAA);
-  for (const auto& d : eng.situation().sensor_detections) {
+  for (const auto& d : world.situation.sensor_detections) {
     auto io = pos_by_id.find(d.observer_id);
     auto it = pos_by_id.find(d.target_id);
     if (io == pos_by_id.end() || it == pos_by_id.end()) {
@@ -340,7 +340,7 @@ void entity_display_rgb(const cw::engine::EntitySituation& e, float& r, float& g
   }
 }
 
-void draw_entities(const cw::engine::Engine& eng, float world_width_m, float world_height_m,
+void draw_entities(const cw::engine::SituationPresentation& world, float world_width_m, float world_height_m,
                    int vp_w, int vp_h, float cx_ref, IconTextureCache& icon_cache) {
   // 实体符号：屏幕像素近似固定（不随地图缩放变化）。速度矢量用世界尺度 `vscale`，但放大后 vscale 很小，
   // 矢量在世界米下短于亚像素，故对屏幕长度设下限；三维地球侧用同一套 `vscale` 与最小像素长。
@@ -354,7 +354,7 @@ void draw_entities(const cw::engine::Engine& eng, float world_width_m, float wor
   constexpr float kCrossHalfArmPx = 16.F;
   const float vscale =
       std::max(2.F, std::min(world_width_m * 0.00012F, world_width_m * 0.00003F));
-  const auto& snap = eng.situation();
+  const auto& snap = world.situation;
 
   glDisable(GL_LIGHTING);
   glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
@@ -490,7 +490,7 @@ static float globe_radius_for_airspace_alt_m(float alt_m_min) {
   return std::max(kGlobeGridR + 0.00012f, r + 0.00012f);
 }
 
-void draw_routes_globe(const cw::engine::Engine& eng, float cx_ref, int vp_w, int vp_h,
+void draw_routes_globe(const cw::engine::SituationPresentation& world, float cx_ref, int vp_w, int vp_h,
                        std::vector<cw::render::GlobeLonLatLabel>* labels_out, float camera_distance) {
   glDisable(GL_TEXTURE_2D);
   const float W = cw::render::TacticalMercatorMap::kWorldWidthM;
@@ -499,7 +499,7 @@ void draw_routes_globe(const cw::engine::Engine& eng, float cx_ref, int vp_w, in
   pixel_scale *= std::sqrt(static_cast<float>(std::max(360, vp_h)) / 720.F);
   pixel_scale = std::clamp(pixel_scale, 0.38F, 2.2F);
 
-  for (const auto& r : eng.routes()) {
+  for (const auto& r : world.routes) {
     if (r.waypoints.size() < 2) {
       continue;
     }
@@ -582,9 +582,9 @@ void draw_routes_globe(const cw::engine::Engine& eng, float cx_ref, int vp_w, in
   }
 }
 
-void draw_airspaces_globe(const cw::engine::Engine& eng, float cx_ref) {
+void draw_airspaces_globe(const cw::engine::SituationPresentation& world, float cx_ref) {
   glLineWidth(1.F);
-  for (const auto& a : eng.airspaces()) {
+  for (const auto& a : world.airspaces) {
     if (a.kind == cw::scenario::AirspaceKind::Box) {
       const float alt_floor = std::min(a.box_min.z, a.box_max.z);
       const float kR = globe_radius_for_airspace_alt_m(alt_floor);
@@ -630,7 +630,7 @@ void draw_airspaces_globe(const cw::engine::Engine& eng, float cx_ref) {
   }
 }
 
-void draw_detections_globe(const cw::engine::Engine& eng,
+void draw_detections_globe(const cw::engine::SituationPresentation& world,
                            const std::unordered_map<cw::engine::EntityId, cw::math::Vec3>& pos_by_id,
                            float cx_ref) {
   glLineWidth(1.F);
@@ -638,7 +638,7 @@ void draw_detections_globe(const cw::engine::Engine& eng,
   glEnable(GL_LINE_STIPPLE);
   glLineStipple(1, 0xAAAA);
   constexpr float kR = 1.004F;
-  for (const auto& d : eng.situation().sensor_detections) {
+  for (const auto& d : world.situation.sensor_detections) {
     auto io = pos_by_id.find(d.observer_id);
     auto it = pos_by_id.find(d.target_id);
     if (io == pos_by_id.end() || it == pos_by_id.end()) {
@@ -669,7 +669,7 @@ void draw_detections_globe(const cw::engine::Engine& eng,
   glDisable(GL_LINE_STIPPLE);
 }
 
-void draw_entities_globe(const cw::engine::Engine& eng, float cx_ref,
+void draw_entities_globe(const cw::engine::SituationPresentation& world, float cx_ref,
                          const cw::render::GlobeEarthView& globe, int vp_w, int vp_h) {
   glDisable(GL_TEXTURE_2D);
   const float vpwf = static_cast<float>(std::max(1, vp_w));
@@ -682,7 +682,7 @@ void draw_entities_globe(const cw::engine::Engine& eng, float cx_ref,
   constexpr float kMinSpeedVecPx = 32.F;
   const float m_per_px_x = world_width_m / vpwf;
   const float m_per_px_y = world_height_m / vphf;
-  const auto& snap = eng.situation();
+  const auto& snap = world.situation;
   glEnable(GL_BLEND);
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
   for (const auto& e : snap.entities) {
@@ -867,7 +867,7 @@ void draw_hud_gl_globe_variant(int vp_w, int vp_h, GLuint font_base, const Situa
   glMatrixMode(GL_MODELVIEW);
 }
 
-void draw_frame_globe(const cw::engine::Engine& eng, SituationViewShell& shell, int vp_w,
+void draw_frame_globe(const cw::engine::SituationPresentation& world, SituationViewShell& shell, int vp_w,
                       int vp_h, int tactical_frustum_vp_w, int cursor_mx, int cursor_my,
                       const cw::render::WorldVectorMerc* world_vec, unsigned world_tex_gl,
                       const cw::render::WorldVectorLines* coastlines,
@@ -877,7 +877,7 @@ void draw_frame_globe(const cw::engine::Engine& eng, SituationViewShell& shell, 
   (void)icon_cache;
 
   cw::render::MercatorBounds b{};
-  shell.tactical_map().expand_bounds_from_engine(eng, b);
+  shell.tactical_map().expand_bounds_from_presentation(world, b);
   cw::render::MercatorOrthoFrustum tactical{};
   const int tact_w = std::max(1, tactical_frustum_vp_w);
   shell.tactical_map().compute_interactive_frustum(b, tact_w, vp_h, tactical);
@@ -1024,14 +1024,14 @@ void draw_frame_globe(const cw::engine::Engine& eng, SituationViewShell& shell, 
   glColor3f(1.F, 1.F, 1.F);
 
   if (draw_simulation_layers) {
-    draw_airspaces_globe(eng, cx_ref);
-    draw_routes_globe(eng, cx_ref, vp_w, vp_h, &globe_grid_labels, shell.globe_view().camera().distance);
+    draw_airspaces_globe(world, cx_ref);
+    draw_routes_globe(world, cx_ref, vp_w, vp_h, &globe_grid_labels, shell.globe_view().camera().distance);
     std::unordered_map<cw::engine::EntityId, cw::math::Vec3> pos_by_id;
-    for (const auto& e : eng.situation().entities) {
+    for (const auto& e : world.situation.entities) {
       pos_by_id[e.id] = e.position;
     }
-    draw_detections_globe(eng, pos_by_id, cx_ref);
-    draw_entities_globe(eng, cx_ref, shell.globe_view(), vp_w, vp_h);
+    draw_detections_globe(world, pos_by_id, cx_ref);
+    draw_entities_globe(world, cx_ref, shell.globe_view(), vp_w, vp_h);
   }
 
   glDisable(GL_DEPTH_TEST);
@@ -1240,7 +1240,7 @@ static double great_circle_deg(double lon1_deg, double lat1_deg, double lon2_deg
   return c * (180.0 / kPi);
 }
 
-static std::optional<cw::engine::EntityId> pick_entity_tactical(const cw::engine::Engine& eng,
+static std::optional<cw::engine::EntityId> pick_entity_tactical(const cw::engine::SituationPresentation& world,
                                                                 cw::render::TacticalMercatorMap& tactical,
                                                                 int vp_w, int vp_h, int mx_local,
                                                                 int my_local) {
@@ -1248,7 +1248,7 @@ static std::optional<cw::engine::EntityId> pick_entity_tactical(const cw::engine
     return std::nullopt;
   }
   cw::render::MercatorBounds b{};
-  tactical.expand_bounds_from_engine(eng, b);
+  tactical.expand_bounds_from_presentation(world, b);
   cw::render::MercatorOrthoFrustum tactical_fr{};
   tactical.compute_interactive_frustum(b, vp_w, vp_h, tactical_fr);
   const float cx_ref = (tactical_fr.l + tactical_fr.r) * 0.5F;
@@ -1273,7 +1273,7 @@ static std::optional<cw::engine::EntityId> pick_entity_tactical(const cw::engine
   const double wy =
       static_cast<double>(tactical_fr.b) + fy * (static_cast<double>(tactical_fr.t) - static_cast<double>(tactical_fr.b));
 
-  const auto& snap = eng.situation();
+  const auto& snap = world.situation;
   const double W = static_cast<double>(cw::render::TacticalMercatorMap::kWorldWidthM);
   std::optional<cw::engine::EntityId> best_id;
   float best_d2 = hit_r2 + 1.0e12F;
@@ -1294,7 +1294,7 @@ static std::optional<cw::engine::EntityId> pick_entity_tactical(const cw::engine
   return best_id;
 }
 
-static std::optional<cw::engine::EntityId> pick_entity_globe_gl(const cw::engine::Engine& eng,
+static std::optional<cw::engine::EntityId> pick_entity_globe_gl(const cw::engine::SituationPresentation& world,
                                                                 cw::render::GlobeEarthView& globe,
                                                                 cw::render::TacticalMercatorMap& tactical,
                                                                 int tactical_frustum_vp_w, int vp_w, int vp_h,
@@ -1309,7 +1309,7 @@ static std::optional<cw::engine::EntityId> pick_entity_globe_gl(const cw::engine
     return std::nullopt;
   }
   cw::render::MercatorBounds b{};
-  tactical.expand_bounds_from_engine(eng, b);
+  tactical.expand_bounds_from_presentation(world, b);
   cw::render::MercatorOrthoFrustum tactical_fr{};
   tactical.compute_interactive_frustum(b, tactical_frustum_vp_w, vp_h, tactical_fr);
   const float cx_ref = (tactical_fr.l + tactical_fr.r) * 0.5F;
@@ -1321,7 +1321,7 @@ static std::optional<cw::engine::EntityId> pick_entity_globe_gl(const cw::engine
   const double th_deg =
       std::clamp(visible_deg * (0.5 * 44.0 / static_cast<double>(std::max(vp_w, vp_h))), 0.08, 3.5);
 
-  const auto& snap = eng.situation();
+  const auto& snap = world.situation;
   std::optional<cw::engine::EntityId> best_id;
   double best_d = 1.0e100;
   for (const auto& e : snap.entities) {
@@ -1339,10 +1339,10 @@ static std::optional<cw::engine::EntityId> pick_entity_globe_gl(const cw::engine
   return best_id;
 }
 
-std::optional<cw::engine::EntityId> try_pick_entity_at_screen(const cw::engine::Engine& eng,
+std::optional<cw::engine::EntityId> try_pick_entity_at_screen(const cw::engine::SituationPresentation& world,
                                                                 SituationViewShell& shell, int client_w,
                                                                 int client_h, int mouse_x, int mouse_y) {
-  if (eng.situation().entities.empty()) {
+  if (world.situation.entities.empty()) {
     return std::nullopt;
   }
   const ViewMode vm = shell.view_mode();
@@ -1354,7 +1354,7 @@ std::optional<cw::engine::EntityId> try_pick_entity_at_screen(const cw::engine::
     if (!tact.contains(mouse_x, mouse_y)) {
       return std::nullopt;
     }
-    return pick_entity_tactical(eng, shell.tactical_map(), tact.w, tact.h, tact.to_local_x(mouse_x),
+    return pick_entity_tactical(world, shell.tactical_map(), tact.w, tact.h, tact.to_local_x(mouse_x),
                                   tact.to_local_y(mouse_y));
   }
 
@@ -1363,7 +1363,7 @@ std::optional<cw::engine::EntityId> try_pick_entity_at_screen(const cw::engine::
     if (!glob.contains(mouse_x, mouse_y)) {
       return std::nullopt;
     }
-    auto id = pick_entity_globe_gl(eng, shell.globe_view(), shell.tactical_map(), cw, glob.w, glob.h,
+    auto id = pick_entity_globe_gl(world, shell.globe_view(), shell.tactical_map(), cw, glob.w, glob.h,
                                    glob.to_local_x(mouse_x), glob.to_local_y(mouse_y));
     glViewport(0, 0, cw, ch);
     return id;
@@ -1373,11 +1373,11 @@ std::optional<cw::engine::EntityId> try_pick_entity_at_screen(const cw::engine::
   const MapWindow glob = shell.globe_map_window(cw, std::max(1, client_h));
   const int split_x = tact.w;
   if (tact.contains(mouse_x, mouse_y)) {
-    return pick_entity_tactical(eng, shell.tactical_map(), tact.w, tact.h, tact.to_local_x(mouse_x),
+    return pick_entity_tactical(world, shell.tactical_map(), tact.w, tact.h, tact.to_local_x(mouse_x),
                                 tact.to_local_y(mouse_y));
   }
   if (glob.contains(mouse_x, mouse_y)) {
-    auto id = pick_entity_globe_gl(eng, shell.globe_view(), shell.tactical_map(), split_x, glob.w, glob.h,
+    auto id = pick_entity_globe_gl(world, shell.globe_view(), shell.tactical_map(), split_x, glob.w, glob.h,
                                    glob.to_local_x(mouse_x), glob.to_local_y(mouse_y));
     glViewport(0, 0, cw, ch);
     return id;
@@ -1385,12 +1385,12 @@ std::optional<cw::engine::EntityId> try_pick_entity_at_screen(const cw::engine::
   return std::nullopt;
 }
 
-void draw_simulation_overlay_gl(int vp_w, int vp_h, GLuint font_base, const cw::engine::Engine& eng,
+void draw_simulation_overlay_gl(int vp_w, int vp_h, GLuint font_base, const cw::engine::SituationPresentation& world,
                                 bool show_entity_list, std::optional<cw::engine::EntityId> detail_entity) {
   if (font_base == 0 || vp_w < 8 || vp_h < 8) {
     return;
   }
-  const cw::engine::SituationSnapshot& snap = eng.situation();
+  const cw::engine::SituationSnapshot& snap = world.situation;
   char status[192];
   std::snprintf(status, sizeof(status), "Sim t=%.2fs  x%.4g  [%s]", snap.sim_time, snap.time_scale,
                 engine_state_hud_label(snap.engine_state));
@@ -1542,14 +1542,14 @@ void draw_split_divider(int vp_w, int vp_h, int split_x) {
   glMatrixMode(GL_MODELVIEW);
 }
 
-void draw_frame_tactical(const cw::engine::Engine& eng, SituationViewShell& shell, int vp_w,
+void draw_frame_tactical(const cw::engine::SituationPresentation& world, SituationViewShell& shell, int vp_w,
                          int vp_h, int cursor_mx, int cursor_my, const cw::render::WorldVectorMerc* world_vec,
                          unsigned world_tex_gl, const cw::render::WorldVectorLines* coastlines,
                          const cw::render::WorldVectorLines* boundary_lines, IconTextureCache& icon_cache,
                          bool draw_simulation_layers, SituationHud* hud_out, GLuint hud_font_base,
                          bool clear_color_buffer, const SituationRenderOptions& opts) {
   cw::render::MercatorBounds b{};
-  shell.tactical_map().expand_bounds_from_engine(eng, b);
+  shell.tactical_map().expand_bounds_from_presentation(world, b);
   cw::render::MercatorOrthoFrustum tactical{};
   shell.tactical_map().compute_interactive_frustum(b, vp_w, vp_h, tactical);
   cw::render::TacticalMercatorMap::apply_ortho_frustum(tactical);
@@ -1619,7 +1619,7 @@ void draw_frame_tactical(const cw::engine::Engine& eng, SituationViewShell& shel
                                         tactical_vp_center_lat);
 
   if (draw_simulation_layers) {
-    draw_airspaces(eng, cx_ref);
+    draw_airspaces(world, cx_ref);
     {
       const float ww = tactical.r - tactical.l;
       glLineWidth(std::clamp(ww / 200000.F, 1.F, 6.F));
@@ -1627,15 +1627,15 @@ void draw_frame_tactical(const cw::engine::Engine& eng, SituationViewShell& shel
     {
       const float ww = tactical.r - tactical.l;
       const float hh = tactical.t - tactical.b;
-      draw_routes(eng, cx_ref, ww, hh, vp_w, vp_h, hud_font_base);
+      draw_routes(world, cx_ref, ww, hh, vp_w, vp_h, hud_font_base);
     }
 
     std::unordered_map<cw::engine::EntityId, cw::math::Vec3> pos_by_id;
-    for (const auto& e : eng.situation().entities) {
+    for (const auto& e : world.situation.entities) {
       pos_by_id[e.id] = e.position;
     }
-    draw_detections(eng, pos_by_id, cx_ref);
-    draw_entities(eng, tactical.r - tactical.l, tactical.t - tactical.b, vp_w, vp_h, cx_ref,
+    draw_detections(world, pos_by_id, cx_ref);
+    draw_entities(world, tactical.r - tactical.l, tactical.t - tactical.b, vp_w, vp_h, cx_ref,
                   icon_cache);
   }
 
@@ -1648,7 +1648,7 @@ void draw_frame_tactical(const cw::engine::Engine& eng, SituationViewShell& shel
 #endif
 }
 
-void draw_frame_split(const cw::engine::Engine& eng, SituationViewShell& shell, int vp_w,
+void draw_frame_split(const cw::engine::SituationPresentation& world, SituationViewShell& shell, int vp_w,
                       int vp_h, int cursor_mx, int cursor_my, const cw::render::WorldVectorMerc* world_vec,
                       unsigned world_tex_gl, const cw::render::WorldVectorLines* coastlines,
                       const cw::render::WorldVectorLines* boundary_lines, IconTextureCache& icon_cache,
@@ -1666,18 +1666,18 @@ void draw_frame_split(const cw::engine::Engine& eng, SituationViewShell& shell, 
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
   glViewport(0, 0, split_x, vp_h);
-  draw_frame_tactical(eng, shell, split_x, vp_h, t_mx, t_my, world_vec, world_tex_gl, coastlines, boundary_lines,
+  draw_frame_tactical(world, shell, split_x, vp_h, t_mx, t_my, world_vec, world_tex_gl, coastlines, boundary_lines,
                       icon_cache, draw_simulation_layers, hud_out, hud_font_base, false, opts);
 
   glViewport(split_x, 0, right_w, vp_h);
-  draw_frame_globe(eng, shell, right_w, vp_h, split_x, g_mx, g_my, world_vec, world_tex_gl, coastlines,
+  draw_frame_globe(world, shell, right_w, vp_h, split_x, g_mx, g_my, world_vec, world_tex_gl, coastlines,
                    boundary_lines, icon_cache, draw_simulation_layers, hud_out, hud_font_base, false, opts);
 
   glViewport(0, 0, vp_w, vp_h);
   draw_split_divider(vp_w, vp_h, split_x);
 }
 
-void draw_frame(const cw::engine::Engine& eng, SituationViewShell& shell, int vp_w, int vp_h,
+void draw_frame(const cw::engine::SituationPresentation& world, SituationViewShell& shell, int vp_w, int vp_h,
                 int cursor_mx, int cursor_my, const cw::render::WorldVectorMerc* world_vec, unsigned world_tex_gl,
                 const cw::render::WorldVectorLines* coastlines,
                 const cw::render::WorldVectorLines* boundary_lines, IconTextureCache& icon_cache,
@@ -1686,19 +1686,19 @@ void draw_frame(const cw::engine::Engine& eng, SituationViewShell& shell, int vp
     shell.reset_globe_auxiliary_state();
   }
   if (shell.view_mode() == ViewMode::Globe3d) {
-    draw_frame_globe(eng, shell, vp_w, vp_h, vp_w, cursor_mx, cursor_my, world_vec, world_tex_gl, coastlines,
+    draw_frame_globe(world, shell, vp_w, vp_h, vp_w, cursor_mx, cursor_my, world_vec, world_tex_gl, coastlines,
                       boundary_lines, icon_cache, draw_simulation_layers, hud_out, hud_font_base, true, opts);
   } else if (shell.view_mode() == ViewMode::Split2dGlobe) {
-    draw_frame_split(eng, shell, vp_w, vp_h, cursor_mx, cursor_my, world_vec, world_tex_gl, coastlines,
+    draw_frame_split(world, shell, vp_w, vp_h, cursor_mx, cursor_my, world_vec, world_tex_gl, coastlines,
                       boundary_lines, icon_cache, draw_simulation_layers, hud_out, hud_font_base, opts);
   } else {
-    draw_frame_tactical(eng, shell, vp_w, vp_h, cursor_mx, cursor_my, world_vec, world_tex_gl, coastlines,
+    draw_frame_tactical(world, shell, vp_w, vp_h, cursor_mx, cursor_my, world_vec, world_tex_gl, coastlines,
                         boundary_lines, icon_cache, draw_simulation_layers, hud_out, hud_font_base, true, opts);
   }
 #ifdef _WIN32
   glViewport(0, 0, vp_w, vp_h);
   if (hud_font_base != 0 && draw_simulation_layers) {
-    draw_simulation_overlay_gl(vp_w, vp_h, hud_font_base, eng, true, shell.picked_entity_id());
+    draw_simulation_overlay_gl(vp_w, vp_h, hud_font_base, world, true, shell.picked_entity_id());
   }
 #endif
 }

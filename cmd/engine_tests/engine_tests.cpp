@@ -371,6 +371,10 @@ bool test_parse_diagnostics_inline_line() {
     fail(kCase, "ParseDiagnostics.line should be 3");
     return false;
   }
+  if (diag.subcode != cw::scenario::ParseSubcode::UnsupportedVersion) {
+    fail(kCase, "ParseDiagnostics.subcode should be UnsupportedVersion");
+    return false;
+  }
   return true;
 }
 

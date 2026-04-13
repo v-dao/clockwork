@@ -1,5 +1,6 @@
 #pragma once
 
+#include "cw/engine/situation.hpp"
 #include "cw/engine/types.hpp"
 #include "cw/render/globe_view_3d.hpp"
 #include "cw/render/tactical_map_2d.hpp"
@@ -71,12 +72,12 @@ class SituationViewShell {
 #endif
 
   /// 左键拖动平移 / 弧球；分屏时设置 `split_*_driven`（在仿真步进之前调用）。
-  void process_mouse_drag(cw::render::GlWindow& win, cw::engine::Engine& engine, bool& split_left_driven,
-                          bool& split_right_driven);
+  void process_mouse_drag(cw::render::GlWindow& win, const cw::engine::SituationPresentation& world,
+                          bool& split_left_driven, bool& split_right_driven);
 
   /// 左键点击仿真实体拾取（与拖动区分：位移小于约 8px 视为点击）。须在 `poll_events` 之后调用。
-  void process_entity_pick_mouse(cw::engine::Engine& eng, int client_w, int client_h, int mouse_x,
-                                 int mouse_y, bool left_down, bool left_was_down);
+  void process_entity_pick_mouse(const cw::engine::SituationPresentation& world, int client_w, int client_h,
+                                 int mouse_x, int mouse_y, bool left_down, bool left_was_down);
   [[nodiscard]] std::optional<cw::engine::EntityId> picked_entity_id() const noexcept {
     return picked_entity_id_;
   }
@@ -84,8 +85,8 @@ class SituationViewShell {
   void process_wheel(cw::render::GlWindow& win, bool& split_left_driven, bool& split_right_driven);
 
   /// 分屏模式下、`draw_frame` 之前：弧球刷新、二三维中心与东西向比例尺同步（由 `process_pointer_and_wheel` 置位驱动侧）。
-  void pre_draw_split_sync(cw::engine::Engine& engine, int client_w, int client_h, bool split_left_driven,
-                           bool split_right_driven);
+  void pre_draw_split_sync(const cw::engine::SituationPresentation& world, int client_w, int client_h,
+                           bool split_left_driven, bool split_right_driven);
 
   /// 分屏时与左侧战术图一致的经纬网格步长（度）；非分屏或未更新时为 0。
   [[nodiscard]] double split_matched_lonlat_grid_step_deg() const noexcept {
@@ -96,10 +97,10 @@ class SituationViewShell {
   void set_viewport_sync_engine(cw::engine::Engine* engine) noexcept { viewport_sync_engine_ = engine; }
 
  private:
-  void sync_globe_from_tactical_viewport(cw::engine::Engine& engine, int client_w, int client_h,
-                                          int tactical_frustum_vp_w) noexcept;
-  void sync_tactical_from_globe_viewport(cw::engine::Engine& engine, int client_w, int client_h,
-                                         int globe_vp_w_for_ew_readout) noexcept;
+  void sync_globe_from_tactical_viewport(const cw::engine::SituationPresentation& world, int client_w,
+                                         int client_h, int tactical_frustum_vp_w) noexcept;
+  void sync_tactical_from_globe_viewport(const cw::engine::SituationPresentation& world, int client_w,
+                                         int client_h, int globe_vp_w_for_ew_readout) noexcept;
 
 #ifdef _WIN32
   void on_win32_menu_command(unsigned cmd);

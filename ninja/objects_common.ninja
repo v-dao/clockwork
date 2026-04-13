@@ -8,6 +8,9 @@ build $builddir/lib/ecs/entity_coordinate_system.o: cxx lib/ecs/entity_coordinat
 build $builddir/lib/motion/motion_model_3dof.o: cxx lib/motion/motion_model_3dof.cpp
 build $builddir/lib/engine/types.o: cxx lib/engine/types.cpp
 build $builddir/lib/engine/engine.o: cxx lib/engine/engine.cpp
+build $builddir/lib/engine/engine_mount.o: cxx lib/engine/engine_mount.cpp
+build $builddir/lib/engine/engine_mover.o: cxx lib/engine/engine_mover.cpp
+build $builddir/lib/engine/engine_sensor.o: cxx lib/engine/engine_sensor.cpp
 build $builddir/lib/engine/situation_digest.o: cxx lib/engine/situation_digest.cpp
 build $builddir/lib/scenario/parse.o: cxx lib/scenario/parse.cpp
 build $builddir/lib/render/texture_bmp.o: cxx lib/render/texture_bmp.cpp

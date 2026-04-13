@@ -1,15 +1,13 @@
 # 需先有：builddir、exe_ext
 
 smoke_bin = $builddir/cmd/smoke/smoke$exe_ext
-verify_bin = $builddir/cmd/verify/verify$exe_ext
 engine_demo_bin = $builddir/cmd/engine_demo/engine_demo$exe_ext
 scenario_demo_bin = $builddir/cmd/scenario_demo/scenario_demo$exe_ext
 model_demo_bin = $builddir/cmd/model_demo/model_demo$exe_ext
 engine_tests_bin = $builddir/cmd/engine_tests/engine_tests$exe_ext
 
 build $smoke_bin: link cmd/smoke/smoke.cpp $builddir/lib/core/log.o $builddir/lib/core/error.o $builddir/lib/math/vec3.o
-build $verify_bin: link cmd/verify/verify.cpp $builddir/lib/core/log.o $builddir/lib/core/error.o $builddir/lib/math/vec3.o
-build $engine_demo_bin: link cmd/engine_demo/engine_demo.cpp $builddir/lib/core/log.o $builddir/lib/core/error.o $builddir/lib/math/vec3.o $builddir/lib/ecs/entity_coordinate_system.o $builddir/lib/motion/motion_model_3dof.o $builddir/lib/engine/types.o $builddir/lib/engine/engine.o
-build $scenario_demo_bin: link cmd/scenario_demo/scenario_demo.cpp $builddir/lib/core/log.o $builddir/lib/core/error.o $builddir/lib/math/vec3.o $builddir/lib/ecs/entity_coordinate_system.o $builddir/lib/motion/motion_model_3dof.o $builddir/lib/engine/types.o $builddir/lib/engine/engine.o $builddir/lib/scenario/parse.o
-build $model_demo_bin: link cmd/model_demo/model_demo.cpp $builddir/lib/core/log.o $builddir/lib/core/error.o $builddir/lib/math/vec3.o $builddir/lib/ecs/entity_coordinate_system.o $builddir/lib/motion/motion_model_3dof.o $builddir/lib/engine/types.o $builddir/lib/engine/engine.o $builddir/lib/scenario/parse.o
-build $engine_tests_bin: link cmd/engine_tests/engine_tests.cpp $builddir/lib/core/log.o $builddir/lib/core/error.o $builddir/lib/math/vec3.o $builddir/lib/ecs/entity_coordinate_system.o $builddir/lib/motion/motion_model_3dof.o $builddir/lib/engine/types.o $builddir/lib/engine/engine.o $builddir/lib/engine/situation_digest.o $builddir/lib/scenario/parse.o
+build $engine_demo_bin: link cmd/engine_demo/engine_demo.cpp $builddir/lib/core/log.o $builddir/lib/core/error.o $builddir/lib/math/vec3.o $builddir/lib/ecs/entity_coordinate_system.o $builddir/lib/motion/motion_model_3dof.o $builddir/lib/engine/types.o $builddir/lib/engine/engine.o $builddir/lib/engine/engine_mount.o $builddir/lib/engine/engine_mover.o $builddir/lib/engine/engine_sensor.o
+build $scenario_demo_bin: link cmd/scenario_demo/scenario_demo.cpp $builddir/lib/core/log.o $builddir/lib/core/error.o $builddir/lib/math/vec3.o $builddir/lib/ecs/entity_coordinate_system.o $builddir/lib/motion/motion_model_3dof.o $builddir/lib/engine/types.o $builddir/lib/engine/engine.o $builddir/lib/engine/engine_mount.o $builddir/lib/engine/engine_mover.o $builddir/lib/engine/engine_sensor.o $builddir/lib/scenario/parse.o
+build $model_demo_bin: link cmd/model_demo/model_demo.cpp $builddir/lib/core/log.o $builddir/lib/core/error.o $builddir/lib/math/vec3.o $builddir/lib/ecs/entity_coordinate_system.o $builddir/lib/motion/motion_model_3dof.o $builddir/lib/engine/types.o $builddir/lib/engine/engine.o $builddir/lib/engine/engine_mount.o $builddir/lib/engine/engine_mover.o $builddir/lib/engine/engine_sensor.o $builddir/lib/scenario/parse.o
+build $engine_tests_bin: link cmd/engine_tests/engine_tests.cpp $builddir/lib/core/log.o $builddir/lib/core/error.o $builddir/lib/math/vec3.o $builddir/lib/ecs/entity_coordinate_system.o $builddir/lib/motion/motion_model_3dof.o $builddir/lib/engine/types.o $builddir/lib/engine/engine.o $builddir/lib/engine/engine_mount.o $builddir/lib/engine/engine_mover.o $builddir/lib/engine/engine_sensor.o $builddir/lib/engine/situation_digest.o $builddir/lib/scenario/parse.o
