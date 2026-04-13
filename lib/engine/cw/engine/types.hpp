@@ -1,5 +1,7 @@
 #pragma once
 
+#include "cw/model_kind.hpp"
+
 #include <cstdint>
 
 namespace cw::engine {
@@ -12,14 +14,7 @@ enum class EngineState : std::uint8_t {
   Stopped,
 };
 
-enum class ModelKind : std::uint8_t {
-  Mover = 0,
-  Sensor,
-  Comdevice,
-  Processor,
-  Weapon,
-  Signature,
-};
+using ModelKind = cw::ModelKind;
 
 using EntityId = std::uint64_t;
 

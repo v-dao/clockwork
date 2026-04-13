@@ -1,6 +1,6 @@
 #pragma once
 
-#include "cw/engine/types.hpp"
+#include "cw/model_kind.hpp"
 #include "cw/vec3.hpp"
 
 #include <optional>
@@ -12,7 +12,7 @@ namespace cw::scenario {
 
 /// 挂载模型及键值参数（对齐 api「列表及参数」）。
 struct ModelMountDesc {
-  cw::engine::ModelKind kind{};
+  cw::ModelKind kind{};
   std::vector<std::pair<std::string, std::string>> params;
 };
 

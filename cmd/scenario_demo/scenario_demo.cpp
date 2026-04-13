@@ -33,7 +33,7 @@ bool snapshot_has_entity_named(const cw::engine::SituationSnapshot& snap, const 
 
 bool entity_has_mover_mount(const cw::scenario::ScenarioEntityDesc& e) {
   for (const auto& m : e.mounts) {
-    if (m.kind == cw::engine::ModelKind::Mover) {
+    if (m.kind == cw::ModelKind::Mover) {
       return true;
     }
   }

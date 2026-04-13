@@ -133,3 +133,11 @@ Lua 与可视化蓝图作为**控制逻辑宿主**：读取可暴露的实体状
 - 功能条目：[requirements.md](requirements.md)
 - 接口契约：[api.md](api.md)
 - 开发约束：[development.md](development.md)
+
+---
+
+## 7. 已知设计取舍与演进方向
+
+当前实现优先打通单机 MVP：想定 → 引擎 → 态势快照 → `situation_view`。在此前提下存在**刻意的简化**（如 `aggregate_situation` 高频全量拷贝、传感器网格按全局最大射程定宽等）。模型类型枚举由 `lib/core/cw/model_kind.hpp`（`cw::ModelKind`）供想定与引擎共用。**不表示长期形态已定**。
+
+更细的条目化讨论（`Engine` 拆分、快照与传感器耦合、热路径缓存、解析子码、`comm_link` 顺序策略、检查点内存、运行程序边界、蓝图排期与代码现状等）见 [code-review-summary.md](code-review-summary.md) **「架构与设计评审补充（待迭代）」**。

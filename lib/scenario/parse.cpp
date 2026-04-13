@@ -286,8 +286,8 @@ bool parse_color_token(const std::string& tok, float& r, float& g, float& b) {
   return lookup_named_color_rgb(tok, r, g, b);
 }
 
-Error model_from_token(const std::string& t, cw::engine::ModelKind& out) {
-  using cw::engine::ModelKind;
+Error model_from_token(const std::string& t, cw::ModelKind& out) {
+  using cw::ModelKind;
   if (cw::ieq(t, "mover")) {
     out = ModelKind::Mover;
   } else if (cw::ieq(t, "sensor")) {
@@ -718,7 +718,7 @@ Error parse_scenario_text(std::string_view text, Scenario& out, ParseDiagnostics
       if (!e) {
         return fail_line(diag, line_no);
       }
-      cw::engine::ModelKind mk{};
+      cw::ModelKind mk{};
       if (!cw::ok(model_from_token(tok[2], mk))) {
         return fail_line(diag, line_no);
       }
