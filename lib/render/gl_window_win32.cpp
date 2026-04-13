@@ -1,4 +1,4 @@
-#include "cw/render/gl_window.hpp"
+#include "cw/render/gl_window_win32.hpp"
 
 #ifdef _WIN32
 
@@ -32,6 +32,7 @@ typedef HGLRC(WINAPI* PFN_wglCreateContextAttribsARB)(HDC, HGLRC, const int*);
 #define GET_Y_LPARAM(lp) (static_cast<int>(static_cast<std::int16_t>(HIWORD(lp))))
 #endif
 
+#include <cmath>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -53,24 +54,24 @@ std::wstring utf8_to_wide(const char* utf8) {
   return std::wstring(buf.data());
 }
 
-GlWindow* from_hwnd(HWND hwnd, UINT msg, LPARAM lParam) {
+GlWindowWin32* from_hwnd(HWND hwnd, UINT msg, LPARAM lParam) {
   if (msg == WM_NCCREATE) {
     const auto* cs = reinterpret_cast<CREATESTRUCTW*>(lParam);
-    auto* self = static_cast<GlWindow*>(cs->lpCreateParams);
+    auto* self = static_cast<GlWindowWin32*>(cs->lpCreateParams);
     SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
     return self;
   }
-  return reinterpret_cast<GlWindow*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+  return reinterpret_cast<GlWindowWin32*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
 }
 
 LRESULT CALLBACK GlWindowWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-  GlWindow* self = from_hwnd(hwnd, msg, lParam);
+  GlWindowWin32* self = from_hwnd(hwnd, msg, lParam);
   if (self == nullptr) {
     return DefWindowProcW(hwnd, msg, wParam, lParam);
   }
   switch (msg) {
     case WM_CLOSE:
-      self->win32_notify_close_request();
+      self->platform_notify_close_request();
       return 0;
     case WM_DESTROY:
       PostQuitMessage(0);
@@ -78,29 +79,29 @@ LRESULT CALLBACK GlWindowWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
     case WM_SIZE: {
       int cw = LOWORD(lParam);
       int ch = HIWORD(lParam);
-      self->win32_notify_client_size(cw, ch);
+      self->platform_notify_client_size(cw, ch);
       return 0;
     }
-       case WM_MOUSEWHEEL: {
-      self->win32_add_wheel_delta(static_cast<int>(GET_WHEEL_DELTA_WPARAM(wParam)));
+    case WM_MOUSEWHEEL: {
+      self->add_wheel_delta(static_cast<int>(GET_WHEEL_DELTA_WPARAM(wParam)));
       return 0;
     }
     case WM_LBUTTONDOWN: {
-      self->win32_set_mouse_client(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
-      self->win32_set_left_button(true);
+      self->platform_set_mouse_client(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+      self->platform_set_left_button(true);
       SetCapture(hwnd);
       return 0;
     }
     case WM_LBUTTONUP: {
-      self->win32_set_mouse_client(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
-      self->win32_set_left_button(false);
+      self->platform_set_mouse_client(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+      self->platform_set_left_button(false);
       if (GetCapture() == hwnd) {
         ReleaseCapture();
       }
       return 0;
     }
     case WM_MOUSEMOVE: {
-      self->win32_set_mouse_client(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+      self->platform_set_mouse_client(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
       return 0;
     }
     case WM_COMMAND: {
@@ -117,7 +118,6 @@ LRESULT CALLBACK GlWindowWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
 
 constexpr wchar_t kClassName[] = L"ClockworkGlWindow";
 
-/// 在创建任何 HWND 之前调用。未声明 DPI 感知时，系统会按 ~96 DPI 绘制再整体放大，菜单栏/标题栏易模糊。
 void ensure_process_dpi_aware() {
   static bool done = false;
   if (done) {
@@ -130,7 +130,6 @@ void ensure_process_dpi_aware() {
     void* proc = reinterpret_cast<void*>(GetProcAddress(user, "SetProcessDpiAwarenessContext"));
     auto set_ctx = reinterpret_cast<SetProcessDpiAwarenessContextFn>(proc);
     if (set_ctx != nullptr) {
-      /// `DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2` = (HANDLE)-4（Windows 10 1703+）
       if (set_ctx(reinterpret_cast<void*>(static_cast<ULONG_PTR>(-4))) != FALSE) {
         return;
       }
@@ -141,9 +140,9 @@ void ensure_process_dpi_aware() {
 
 }  // namespace
 
-GlWindow::~GlWindow() { close(); }
+GlWindowWin32::~GlWindowWin32() { close(); }
 
-bool GlWindow::open(const GlWindowConfig& cfg) {
+bool GlWindowWin32::open(const GlWindowConfig& cfg) {
   ensure_process_dpi_aware();
 
   if (open_) {
@@ -260,19 +259,12 @@ bool GlWindow::open(const GlWindowConfig& cfg) {
 
   RECT cr{};
   GetClientRect(hwnd, &cr);
-  client_w_ = cr.right - cr.left;
-  client_h_ = cr.bottom - cr.top;
-  if (client_w_ < 1) {
-    client_w_ = 1;
-  }
-  if (client_h_ < 1) {
-    client_h_ = 1;
-  }
+  platform_notify_client_size(cr.right - cr.left, cr.bottom - cr.top);
 
   return true;
 }
 
-void GlWindow::close() noexcept {
+void GlWindowWin32::close() noexcept {
   if (!open_) {
     return;
   }
@@ -297,7 +289,7 @@ void GlWindow::close() noexcept {
   open_ = false;
 }
 
-void GlWindow::poll_events() noexcept {
+void GlWindowWin32::poll_events() noexcept {
   MSG msg{};
   while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE) != 0) {
     TranslateMessage(&msg);
@@ -305,45 +297,84 @@ void GlWindow::poll_events() noexcept {
   }
 }
 
-void GlWindow::swap_buffers() noexcept {
+void GlWindowWin32::swap_buffers() noexcept {
   if (hdc_ != nullptr) {
     SwapBuffers(static_cast<HDC>(hdc_));
   }
 }
 
-void GlWindow::make_current() const noexcept {
+void GlWindowWin32::make_current() const noexcept {
   if (hdc_ != nullptr && hglrc_ != nullptr) {
     wglMakeCurrent(static_cast<HDC>(hdc_), static_cast<HGLRC>(hglrc_));
   }
 }
 
-void GlWindow::sync_client_size_from_window() noexcept {
+void GlWindowWin32::sync_client_size_from_window() noexcept {
   if (!open_ || hwnd_ == nullptr) {
     return;
   }
   RECT cr{};
   GetClientRect(static_cast<HWND>(hwnd_), &cr);
-  win32_notify_client_size(cr.right - cr.left, cr.bottom - cr.top);
+  platform_notify_client_size(cr.right - cr.left, cr.bottom - cr.top);
+}
+
+void* GlWindowWin32::native_window_handle() const noexcept { return hwnd_; }
+
+unsigned GlWindowWin32::create_hud_bitmap_font_lists() noexcept {
+  HDC hdc = static_cast<HDC>(hdc_);
+  if (hdc == nullptr) {
+    return 0;
+  }
+  const GLuint base = glGenLists(96);
+  if (base == 0) {
+    return 0;
+  }
+  const int log_pixels_y = GetDeviceCaps(hdc, LOGPIXELSY);
+  const int font_height = -MulDiv(12, log_pixels_y, 72);
+  HFONT hf = CreateFontW(font_height, 0, 0, 0, FW_MEDIUM, 0, 0, 0, ANSI_CHARSET, OUT_DEFAULT_PRECIS,
+                         CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, nullptr);
+  if (hf == nullptr) {
+    glDeleteLists(base, 96);
+    return 0;
+  }
+  HFONT old = static_cast<HFONT>(SelectObject(hdc, hf));
+  if (wglUseFontBitmapsW(hdc, 32, 96, base) == FALSE) {
+    SelectObject(hdc, old);
+    DeleteObject(hf);
+    glDeleteLists(base, 96);
+    return 0;
+  }
+  SelectObject(hdc, old);
+  DeleteObject(hf);
+  return static_cast<unsigned>(base);
+}
+
+void GlWindowWin32::destroy_hud_bitmap_font_lists(unsigned base, int count) noexcept {
+  if (base != 0U && count > 0) {
+    glDeleteLists(static_cast<GLuint>(base), count);
+  }
+}
+
+GlWindowHotkeyEdges GlWindowWin32::poll_hotkey_edges() noexcept {
+  GlWindowHotkeyEdges e{};
+  if ((GetAsyncKeyState(VK_ESCAPE) & 0x1) != 0) {
+    e.escape = true;
+  }
+  if ((GetAsyncKeyState(VK_HOME) & 0x1) != 0) {
+    e.home_reset_view = true;
+  }
+  if ((GetAsyncKeyState(VK_SPACE) & 0x1) != 0) {
+    e.toggle_pause = true;
+  }
+  if (((GetAsyncKeyState(VK_OEM_PLUS) & 0x1) != 0) || ((GetAsyncKeyState(VK_ADD) & 0x1) != 0)) {
+    e.time_scale_up = true;
+  }
+  if (((GetAsyncKeyState(VK_OEM_MINUS) & 0x1) != 0) || ((GetAsyncKeyState(VK_SUBTRACT) & 0x1) != 0)) {
+    e.time_scale_down = true;
+  }
+  return e;
 }
 
 }  // namespace cw::render
 
-#else  // !_WIN32
-
-namespace cw::render {
-
-GlWindow::~GlWindow() = default;
-
-bool GlWindow::open(const GlWindowConfig&) { return false; }
-
-void GlWindow::close() noexcept {}
-
-void GlWindow::poll_events() noexcept {}
-
-void GlWindow::swap_buffers() noexcept {}
-
-void GlWindow::sync_client_size_from_window() noexcept {}
-
-}  // namespace cw::render
-
-#endif
+#endif  // _WIN32

@@ -1,3 +1,7 @@
 # 仅 Windows 全量构建需要（gl_window Win32 + WGL）。
 
+build $builddir/lib/render/gl_window.o: cxx lib/render/gl_window.cpp
+build $builddir/lib/render/gl_window_factory.o: cxx lib/render/gl_window_factory.cpp
 build $builddir/lib/render/gl_window_win32.o: cxx lib/render/gl_window_win32.cpp
+build $builddir/lib/situation_view/situation_view_chrome.o: cxx lib/situation_view/situation_view_chrome.cpp
+build $builddir/lib/situation_view/situation_view_chrome_win32.o: cxx lib/situation_view/situation_view_chrome_win32.cpp

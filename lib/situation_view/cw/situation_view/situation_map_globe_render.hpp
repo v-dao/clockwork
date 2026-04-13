@@ -11,13 +11,6 @@
 #include <optional>
 #include <vector>
 
-#ifdef _WIN32
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#include <windows.h>
-#endif
-
 namespace cw::render {
 class WorldVectorMerc;
 class WorldVectorLines;
@@ -73,7 +66,6 @@ void draw_split_divider(int vp_w, int vp_h, int split_x);
     int mouse_x, int mouse_y);
 
 #ifdef _WIN32
-[[nodiscard]] GLuint create_hud_bitmap_font_lists(HDC hdc);
 void draw_hud_gl(int vp_w, int vp_h, GLuint font_base, const SituationHud& hud,
                  const std::vector<cw::render::GlobeLonLatLabel>* grid_labels);
 /// 仿真时间、倍速、引擎状态；可选右上角实体简表（`show_entity_list` 且态势中有实体时）。

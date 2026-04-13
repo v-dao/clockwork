@@ -15,11 +15,9 @@ namespace cw::render {
 class GlWindow;
 }
 
-namespace cw::scenario {
-struct Scenario;
-}
-
 namespace cw::situation_view {
+
+class Win32SituationChrome;
 
 /// 与 `situation_view` 主循环配套的视图模式。
 enum class ViewMode { Tactical2D, Globe3d, Split2dGlobe };
@@ -37,7 +35,7 @@ struct MapWindow {
   [[nodiscard]] int to_local_y(int my) const noexcept { return my - y; }
 };
 
-/// 封装战术图/地球相机状态、Win32 视图菜单、鼠标拖动与滚轮、分屏中心与比例尺同步。
+/// 封装战术图/地球相机状态、鼠标拖动与滚轮、分屏中心与比例尺同步；原生菜单由 `SituationViewChrome` 负责。
 class SituationViewShell {
  public:
   [[nodiscard]] cw::render::TacticalMercatorMap& tactical_map() noexcept { return tactical_; }
@@ -55,21 +53,6 @@ class SituationViewShell {
 
   void reset_view_camera() noexcept;
   void reset_globe_auxiliary_state() noexcept { globe_.reset_content_orientation(); }
-
-#ifdef _WIN32
-  /// 在已打开的 `GlWindow` 上创建 View 菜单并注册 `WM_COMMAND` 回调。
-  void install_win32_view_menu(cw::render::GlWindow& win);
-  /// 在已有菜单栏上追加 **Simulation**（暂停 / 继续 / 结束 / 倍速）。须先调用 `install_win32_view_menu`。
-  void install_win32_simulation_menu(cw::render::GlWindow& win);
-  /// 供菜单回调使用；若未设置则仿真菜单项无效。
-  void set_simulation_menu_engine(cw::engine::Engine* engine) noexcept { engine_sim_menu_ = engine; }
-  /// 供 Reset simulation 菜单再次 `apply_scenario`；仅地图模式可不设。
-  void set_scenario_for_reset(const cw::scenario::Scenario* scenario) noexcept {
-    scenario_for_reset_ = scenario;
-  }
-  /// 将倍速单选与 `engine.time_scale()` 对齐（如键盘改倍速后刷新菜单）。
-  void sync_simulation_menu_from_engine();
-#endif
 
   /// 左键拖动平移 / 弧球；分屏时设置 `split_*_driven`（在仿真步进之前调用）。
   void process_mouse_drag(cw::render::GlWindow& win, const cw::engine::SituationPresentation& world,
@@ -102,10 +85,7 @@ class SituationViewShell {
   void sync_tactical_from_globe_viewport(const cw::engine::SituationPresentation& world, int client_w,
                                          int client_h, int globe_vp_w_for_ew_readout) noexcept;
 
-#ifdef _WIN32
-  void on_win32_menu_command(unsigned cmd);
-  static void win32_menu_thunk(unsigned cmd, void* user);
-#endif
+  friend class Win32SituationChrome;
 
   cw::render::TacticalMercatorMap tactical_{};
   cw::render::GlobeEarthView globe_{};
@@ -122,13 +102,6 @@ class SituationViewShell {
   int pick_down_my_ = 0;
   bool pick_drag_cancel_ = false;
   std::optional<cw::engine::EntityId> picked_entity_id_{};
-#ifdef _WIN32
-  void* hwnd_main_ = nullptr;
-  void* hmenu_view_ = nullptr;
-  void* hmenu_sim_ = nullptr;
-  cw::engine::Engine* engine_sim_menu_ = nullptr;
-  const cw::scenario::Scenario* scenario_for_reset_ = nullptr;
-#endif
 };
 
 }  // namespace cw::situation_view

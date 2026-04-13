@@ -22,11 +22,13 @@
 #include "cw/situation_view/asset_paths.hpp"
 #include "cw/situation_view/icon_texture_cache.hpp"
 #include "cw/situation_view/situation_map_globe_render.hpp"
+#include "cw/situation_view/situation_view_chrome.hpp"
 #include "cw/situation_view/situation_view_shell.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <memory>
 #include <string>
 
 namespace {
@@ -82,35 +84,33 @@ int main(int argc, char** argv) {
   check(engine.apply_scenario(sc), "apply_scenario");
   check(engine.start(), "start");
 
-  cw::render::GlWindow win;
+  std::unique_ptr<cw::render::GlWindow> win = cw::render::create_gl_window();
   const std::string title =
       map_only ? std::string("Clockwork — map")
                : (std::string("Clockwork — ").append(argv[1] != nullptr ? argv[1] : ""));
-  if (!win.open({1280, 720, title.c_str()})) {
+  if (!win->open({1280, 720, title.c_str()})) {
     cw::log(cw::LogLevel::Error, "situation_view: GlWindow::open failed (Windows only in phase 4)");
     return EXIT_FAILURE;
   }
 
   cw::situation_view::SituationViewShell shell;
   shell.set_viewport_sync_engine(&engine);
-  shell.install_win32_view_menu(win);
+  std::unique_ptr<cw::situation_view::SituationViewChrome> chrome =
+      cw::situation_view::create_situation_view_chrome();
+  chrome->install_view_menu(*win, shell);
   if (!map_only) {
-    shell.set_simulation_menu_engine(&engine);
-    shell.set_scenario_for_reset(&sc);
-    shell.install_win32_simulation_menu(win);
+    chrome->set_simulation_targets(&engine, &sc);
+    chrome->install_simulation_menu(*win, shell);
   }
-  win.sync_client_size_from_window();
+  win->sync_client_size_from_window();
 
   GLuint hud_font_base = 0;
-  {
-    HDC hdc = static_cast<HDC>(win.win32_hdc());
-    hud_font_base = cw::situation_view::create_hud_bitmap_font_lists(hdc);
-    if (hud_font_base == 0) {
-      cw::log(cw::LogLevel::Info, "situation_view: bitmap font for HUD unavailable");
-    }
+  win->make_current();
+  hud_font_base = static_cast<GLuint>(win->create_hud_bitmap_font_lists());
+  if (hud_font_base == 0) {
+    cw::log(cw::LogLevel::Info, "situation_view: bitmap font for HUD unavailable");
   }
 
-  win.make_current();
   if (!cw::render::globe_program_try_init()) {
     cw::log(cw::LogLevel::Info, "situation_view: GLSL globe not available (fallback to gluSphere)");
   }
@@ -252,17 +252,17 @@ int main(int argc, char** argv) {
   bool prev_left_down = false;
 #endif
 
-  while (win.is_open() && !win.should_close()) {
-    win.poll_events();
+  while (win->is_open() && !win->should_close()) {
+    win->poll_events();
 
-    const int cw = win.client_width();
-    const int ch = win.client_height();
+    const int cw = win->client_width();
+    const int ch = win->client_height();
 
     bool split_left_driven = false;
     bool split_right_driven = false;
 
     /// 拖动平移在 `step()` 之前执行，外包络与上一帧末态势一致（与原 `Engine&` 语义相同）。
-    shell.process_mouse_drag(win, engine.situation_presentation(), split_left_driven, split_right_driven);
+    shell.process_mouse_drag(*win, engine.situation_presentation(), split_left_driven, split_right_driven);
 
     QueryPerformanceCounter(&now);
     const double dt =
@@ -290,13 +290,13 @@ int main(int argc, char** argv) {
 
     const cw::engine::SituationPresentation world = engine.situation_presentation();
 
-    shell.process_wheel(win, split_left_driven, split_right_driven);
+    shell.process_wheel(*win, split_left_driven, split_right_driven);
 
 #ifdef _WIN32
-    win.make_current();
+    win->make_current();
     if (!map_only) {
-      const bool left_down = win.left_button_down();
-      shell.process_entity_pick_mouse(world, cw, ch, win.mouse_client_x(), win.mouse_client_y(), left_down,
+      const bool left_down = win->left_button_down();
+      shell.process_entity_pick_mouse(world, cw, ch, win->mouse_client_x(), win->mouse_client_y(), left_down,
                                       prev_left_down);
       prev_left_down = left_down;
     }
@@ -304,44 +304,48 @@ int main(int argc, char** argv) {
     glViewport(0, 0, cw, ch);
     shell.pre_draw_split_sync(world, cw, ch, split_left_driven, split_right_driven);
 
-    cw::situation_view::draw_frame(world, shell, cw, ch, win.mouse_client_x(), win.mouse_client_y(),
+    cw::situation_view::draw_frame(world, shell, cw, ch, win->mouse_client_x(), win->mouse_client_y(),
                                    world_vec.valid() ? &world_vec : nullptr,
                                    world_tex.valid() ? world_tex.gl_name : 0U,
                                    coastlines.valid() ? &coastlines : nullptr,
                                    boundary_lines.valid() ? &boundary_lines : nullptr, entity_icons,
                                    !map_only, nullptr, hud_font_base, render_opts);
-    win.swap_buffers();
+    win->swap_buffers();
 
 #ifdef _WIN32
     if (!map_only) {
-      shell.sync_simulation_menu_from_engine();
+      chrome->sync_simulation_menu_from_engine();
     }
-    if ((GetAsyncKeyState(VK_HOME) & 0x1) != 0) {
-      shell.reset_view_camera();
-    }
-    if ((GetAsyncKeyState(VK_SPACE) & 0x1) != 0) {
-      if (engine.state() == cw::engine::EngineState::Running) {
-        check(engine.pause(), "pause");
-      } else if (engine.state() == cw::engine::EngineState::Paused) {
-        check(engine.start(), "start");
+    {
+      const cw::render::GlWindowHotkeyEdges hk = win->poll_hotkey_edges();
+      if (hk.home_reset_view) {
+        shell.reset_view_camera();
       }
-    }
-    if (!map_only) {
-      if (((GetAsyncKeyState(VK_OEM_PLUS) & 0x1) != 0) || ((GetAsyncKeyState(VK_ADD) & 0x1) != 0)) {
-        adjust_engine_time_scale_by_step(engine, +1);
+      if (hk.toggle_pause) {
+        if (engine.state() == cw::engine::EngineState::Running) {
+          check(engine.pause(), "pause");
+        } else if (engine.state() == cw::engine::EngineState::Paused) {
+          check(engine.start(), "start");
+        }
       }
-      if (((GetAsyncKeyState(VK_OEM_MINUS) & 0x1) != 0) || ((GetAsyncKeyState(VK_SUBTRACT) & 0x1) != 0)) {
-        adjust_engine_time_scale_by_step(engine, -1);
+      if (!map_only) {
+        if (hk.time_scale_up) {
+          adjust_engine_time_scale_by_step(engine, +1);
+        }
+        if (hk.time_scale_down) {
+          adjust_engine_time_scale_by_step(engine, -1);
+        }
       }
-    }
-    if ((GetAsyncKeyState(VK_ESCAPE) & 0x1) != 0) {
-      break;
+      if (hk.escape) {
+        break;
+      }
     }
 #endif
   }
 
+  win->make_current();
   if (hud_font_base != 0) {
-    glDeleteLists(hud_font_base, 96);
+    win->destroy_hud_bitmap_font_lists(static_cast<unsigned>(hud_font_base), 96);
   }
   cw::render::globe_program_shutdown();
   coastlines.destroy();
@@ -350,7 +354,7 @@ int main(int argc, char** argv) {
   cw::render::destroy_texture_2d(world_tex);
   entity_icons.destroy_all();
   check(engine.end(), "end");
-  win.close();
+  win->close();
   cw::log(cw::LogLevel::Info, "situation_view: exit");
   return EXIT_SUCCESS;
 

@@ -1048,32 +1048,6 @@ void draw_frame_globe(const cw::engine::SituationPresentation& world, SituationV
 }
 
 #ifdef _WIN32
-GLuint create_hud_bitmap_font_lists(HDC hdc) {
-  const GLuint base = glGenLists(96);
-  if (base == 0) {
-    return 0;
-  }
-  /// 按当前 DC 的 DPI 换算约 12pt，并用 ClearType，减轻高分辨率下 HUD 发糊。
-  const int log_pixels_y = GetDeviceCaps(hdc, LOGPIXELSY);
-  const int font_height = -MulDiv(12, log_pixels_y, 72);
-  HFONT hf = CreateFontW(font_height, 0, 0, 0, FW_MEDIUM, 0, 0, 0, ANSI_CHARSET, OUT_DEFAULT_PRECIS,
-                         CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, nullptr);
-  if (hf == nullptr) {
-    glDeleteLists(base, 96);
-    return 0;
-  }
-  HFONT old = static_cast<HFONT>(SelectObject(hdc, hf));
-  if (wglUseFontBitmapsW(hdc, 32, 96, base) == FALSE) {
-    SelectObject(hdc, old);
-    DeleteObject(hf);
-    glDeleteLists(base, 96);
-    return 0;
-  }
-  SelectObject(hdc, old);
-  DeleteObject(hf);
-  return base;
-}
-
 void draw_hud_gl(int vp_w, int vp_h, GLuint font_base, const SituationHud& hud,
                  const std::vector<cw::render::GlobeLonLatLabel>* grid_labels) {
   if (font_base == 0 || vp_w < 8 || vp_h < 8) {
