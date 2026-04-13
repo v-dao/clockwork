@@ -298,6 +298,10 @@ bool GlWindowWin32::init_opengl_client_branch() noexcept {
 bool GlWindowWin32::init_vulkan_client_branch() noexcept {
   hdc_ = nullptr;
   hglrc_ = nullptr;
+  offscreen_.reset();
+  if (skip_vulkan_offscreen_gl_) {
+    return true;
+  }
   offscreen_ = std::make_unique<GlOffscreenWin32>();
   if (!offscreen_->initialize()) {
     offscreen_.reset();
@@ -357,6 +361,7 @@ bool GlWindowWin32::open(const GlWindowConfig& cfg) {
   hwnd_frame_ = frame;
 
   win_api_ = cfg.window_graphics_api;
+  skip_vulkan_offscreen_gl_ = cfg.vulkan_disable_offscreen_gl;
 
   if (!create_or_resize_client_child()) {
     DestroyWindow(frame);
@@ -480,6 +485,8 @@ bool GlWindowWin32::try_set_window_graphics_api(GraphicsApi api) noexcept {
   sync_client_size_from_window();
   return true;
 }
+
+void GlWindowWin32::set_vulkan_disable_offscreen_gl(bool disable) noexcept { skip_vulkan_offscreen_gl_ = disable; }
 
 unsigned GlWindowWin32::create_hud_bitmap_font_lists() noexcept {
   if (win_api_ == GraphicsApi::Vulkan && offscreen_ != nullptr) {

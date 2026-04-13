@@ -17,6 +17,8 @@ struct GlWindowConfig {
   int height = 768;
   const char* title_utf8 = "Clockwork";
   GraphicsApi window_graphics_api = GraphicsApi::OpenGL;
+  /// Vulkan 且为 true：不创建离屏 WGL/FBO（方案1 纯 Vulkan 清屏呈现，与 `GraphicsDevice::set_vulkan_native_scene_clear_only` 配合）。
+  bool vulkan_disable_offscreen_gl = false;
 };
 
 /// 主循环快捷键边沿（与 `GetAsyncKeyState` &0x1 语义一致：自上次查询以来是否有过一次按下）。
@@ -75,6 +77,9 @@ class GlWindow {
     (void)api;
     return false;
   }
+
+  /// Win32：在切换到 Vulkan 前更新是否跳过离屏 GL（与 `GlWindowConfig::vulkan_disable_offscreen_gl` 一致语义）。
+  virtual void set_vulkan_disable_offscreen_gl(bool disable) noexcept { (void)disable; }
 
   /// Win32 + Vulkan：离屏 WGL/FBO，用于与 Vulkan 交换链合成；其它配置返回 `nullptr`。
   [[nodiscard]] virtual GlOffscreenWin32* offscreen_gl() noexcept { return nullptr; }

@@ -35,6 +35,7 @@ class GlWindowWin32 final : public GlWindow {
   [[nodiscard]] void* native_window_handle() const noexcept override;
   [[nodiscard]] void* native_menu_host_handle() const noexcept override;
   [[nodiscard]] bool try_set_window_graphics_api(GraphicsApi api) noexcept override;
+  void set_vulkan_disable_offscreen_gl(bool disable) noexcept override;
   [[nodiscard]] unsigned create_hud_bitmap_font_lists() noexcept override;
   void destroy_hud_bitmap_font_lists(unsigned base, int count) noexcept override;
   [[nodiscard]] GlWindowHotkeyEdges poll_hotkey_edges() noexcept override;
@@ -52,6 +53,7 @@ class GlWindowWin32 final : public GlWindow {
   [[nodiscard]] bool restore_win_api_after_failed_switch(GraphicsApi previous) noexcept;
 
   GraphicsApi win_api_ = GraphicsApi::OpenGL;
+  bool skip_vulkan_offscreen_gl_ = false;
   void* hwnd_frame_ = nullptr;
   void* hwnd_client_ = nullptr;
   void* hdc_ = nullptr;

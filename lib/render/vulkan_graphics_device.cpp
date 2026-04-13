@@ -14,6 +14,7 @@
 #include <vulkan/vulkan.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -74,7 +75,9 @@ struct VulkanGraphicsDevice::Impl {
   std::vector<VkCommandBuffer> cmd_bufs;
   VkSemaphore sem_image_avail = VK_NULL_HANDLE;
   VkSemaphore sem_render_done = VK_NULL_HANDLE;
-  VkFence fence = VK_NULL_HANDLE;
+  /// One fence per swapchain image: wait after `vkAcquireNextImageKHR` so the GPU can overlap
+  /// frames and acquire failures do not leave a waited-but-never-reset fence stuck unsignaled.
+  std::vector<VkFence> image_fences;
   uint32_t image_index = 0;
   bool skip_submit = false;
   bool valid = false;
@@ -88,6 +91,9 @@ struct VulkanGraphicsDevice::Impl {
   int pending_h = 0;
   std::size_t pending_padded_row = 0;
   std::size_t copy_row_pitch_align = 256;
+
+  bool native_clear_only_ = false;
+  float native_clear_rgba[4] = {0.02F, 0.03F, 0.05F, 1.F};
 
   ~Impl() { cleanup_all(); }
 
@@ -236,10 +242,6 @@ struct VulkanGraphicsDevice::Impl {
       vkDestroySemaphore(device, sem_render_done, nullptr);
       sem_render_done = VK_NULL_HANDLE;
     }
-    if (device != VK_NULL_HANDLE && fence != VK_NULL_HANDLE) {
-      vkDestroyFence(device, fence, nullptr);
-      fence = VK_NULL_HANDLE;
-    }
     destroy_swapchain_resources();
     destroy_staging();
     if (device != VK_NULL_HANDLE) {
@@ -263,6 +265,13 @@ struct VulkanGraphicsDevice::Impl {
     if (device == VK_NULL_HANDLE) {
       return;
     }
+    for (VkFence& f : image_fences) {
+      if (f != VK_NULL_HANDLE) {
+        vkDestroyFence(device, f, nullptr);
+        f = VK_NULL_HANDLE;
+      }
+    }
+    image_fences.clear();
     if (cmd_pool != VK_NULL_HANDLE && !cmd_bufs.empty()) {
       vkFreeCommandBuffers(device, cmd_pool, static_cast<uint32_t>(cmd_bufs.size()), cmd_bufs.data());
     }
@@ -544,12 +553,26 @@ struct VulkanGraphicsDevice::Impl {
   bool create_sync() {
     VkSemaphoreCreateInfo si{};
     si.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-    VkFenceCreateInfo fi{};
-    fi.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    fi.flags = VK_FENCE_CREATE_SIGNALED_BIT;
     return vkCreateSemaphore(device, &si, nullptr, &sem_image_avail) == VK_SUCCESS &&
-           vkCreateSemaphore(device, &si, nullptr, &sem_render_done) == VK_SUCCESS &&
-           vkCreateFence(device, &fi, nullptr, &fence) == VK_SUCCESS;
+           vkCreateSemaphore(device, &si, nullptr, &sem_render_done) == VK_SUCCESS;
+  }
+
+  [[nodiscard]] bool create_image_fences() noexcept {
+    image_fences.resize(swap_images.size());
+    for (std::size_t i = 0; i < image_fences.size(); ++i) {
+      VkFenceCreateInfo fi{};
+      fi.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+      fi.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+      if (vkCreateFence(device, &fi, nullptr, &image_fences[i]) != VK_SUCCESS) {
+        for (std::size_t j = 0; j < i; ++j) {
+          vkDestroyFence(device, image_fences[j], nullptr);
+          image_fences[j] = VK_NULL_HANDLE;
+        }
+        image_fences.clear();
+        return false;
+      }
+    }
+    return true;
   }
 
   void record_clear(uint32_t idx) {
@@ -564,8 +587,15 @@ struct VulkanGraphicsDevice::Impl {
     rp.renderArea.offset = {0, 0};
     rp.renderArea.extent = extent;
     VkClearValue clear{};
-    // 与 OpenGL 路径 `glClearColor(0.02f, 0.03f, 0.05f, 1.f)` 一致。
-    clear.color = {{0.02F, 0.03F, 0.05F, 1.F}};
+    if (native_clear_only_) {
+      clear.color.float32[0] = native_clear_rgba[0];
+      clear.color.float32[1] = native_clear_rgba[1];
+      clear.color.float32[2] = native_clear_rgba[2];
+      clear.color.float32[3] = native_clear_rgba[3];
+    } else {
+      // 与 OpenGL 路径 `glClearColor(0.02f, 0.03f, 0.05f, 1.f)` 一致。
+      clear.color = {{0.02F, 0.03F, 0.05F, 1.F}};
+    }
     rp.clearValueCount = 1;
     rp.pClearValues = &clear;
     vkCmdBeginRenderPass(cb, &rp, VK_SUBPASS_CONTENTS_INLINE);
@@ -588,7 +618,10 @@ struct VulkanGraphicsDevice::Impl {
     if (!create_framebuffers()) {
       return false;
     }
-    return create_command_pool_and_buffers();
+    if (!create_command_pool_and_buffers()) {
+      return false;
+    }
+    return create_image_fences();
   }
 
   bool build_swapchain_pipeline() {
@@ -604,7 +637,7 @@ struct VulkanGraphicsDevice::Impl {
     if (!create_command_pool_and_buffers()) {
       return false;
     }
-    return true;
+    return create_image_fences();
   }
 
   void sync_extent_from_window() {
@@ -664,7 +697,6 @@ void VulkanGraphicsDevice::begin_frame() noexcept {
   }
   impl_->sync_extent_from_window();
   impl_->skip_submit = false;
-  vkWaitForFences(impl_->device, 1, &impl_->fence, VK_TRUE, UINT64_MAX);
   VkResult ar = vkAcquireNextImageKHR(impl_->device, impl_->swapchain, UINT64_MAX, impl_->sem_image_avail,
                                        VK_NULL_HANDLE, &impl_->image_index);
   if (ar == VK_ERROR_OUT_OF_DATE_KHR || ar == VK_SUBOPTIMAL_KHR) {
@@ -678,7 +710,14 @@ void VulkanGraphicsDevice::begin_frame() noexcept {
     impl_->pending_scene = false;
     return;
   }
-  vkResetFences(impl_->device, 1, &impl_->fence);
+  if (impl_->image_index >= impl_->image_fences.size() ||
+      impl_->image_index >= impl_->cmd_bufs.size()) {
+    impl_->skip_submit = true;
+    impl_->pending_scene = false;
+    return;
+  }
+  vkWaitForFences(impl_->device, 1, &impl_->image_fences[impl_->image_index], VK_TRUE, UINT64_MAX);
+  vkResetFences(impl_->device, 1, &impl_->image_fences[impl_->image_index]);
   vkResetCommandBuffer(impl_->cmd_bufs[impl_->image_index], 0);
 }
 
@@ -709,7 +748,7 @@ void VulkanGraphicsDevice::end_frame() noexcept {
   si.pCommandBuffers = &impl_->cmd_bufs[impl_->image_index];
   si.signalSemaphoreCount = 1;
   si.pSignalSemaphores = &impl_->sem_render_done;
-  static_cast<void>(vkQueueSubmit(impl_->queue, 1, &si, impl_->fence));
+  static_cast<void>(vkQueueSubmit(impl_->queue, 1, &si, impl_->image_fences[impl_->image_index]));
 }
 
 void VulkanGraphicsDevice::present() noexcept {
@@ -731,6 +770,10 @@ void VulkanGraphicsDevice::present() noexcept {
 
 void VulkanGraphicsDevice::upload_swapchain_from_cpu_bgra(int width, int height, std::size_t row_bytes,
                                                             const unsigned char* pixels) noexcept {
+  if (impl_->native_clear_only_) {
+    impl_->pending_scene = false;
+    return;
+  }
   if (!impl_->valid || pixels == nullptr || width < 1 || height < 1 ||
       row_bytes < static_cast<std::size_t>(width) * 4U || impl_->device == VK_NULL_HANDLE) {
     impl_->pending_scene = false;
@@ -756,6 +799,27 @@ void VulkanGraphicsDevice::upload_swapchain_from_cpu_bgra(int width, int height,
   impl_->pending_h = height;
   impl_->pending_padded_row = pr;
   impl_->pending_scene = true;
+}
+
+void VulkanGraphicsDevice::set_vulkan_native_scene_clear_only(bool enabled) noexcept {
+  if (impl_ != nullptr) {
+    impl_->native_clear_only_ = enabled;
+  }
+}
+
+bool VulkanGraphicsDevice::vulkan_native_scene_clear_only() const noexcept {
+  return impl_ != nullptr && impl_->native_clear_only_;
+}
+
+void VulkanGraphicsDevice::set_vulkan_native_scene_anim_param(float sim_time_seconds) noexcept {
+  if (impl_ == nullptr || !impl_->valid) {
+    return;
+  }
+  const float u = 0.5F + 0.5F * std::sin(static_cast<double>(sim_time_seconds) * 0.4);
+  impl_->native_clear_rgba[0] = 0.02F + 0.05F * static_cast<float>(u);
+  impl_->native_clear_rgba[1] = 0.03F + 0.04F * static_cast<float>(1.0 - u);
+  impl_->native_clear_rgba[2] = 0.05F + 0.10F * static_cast<float>(u);
+  impl_->native_clear_rgba[3] = 1.F;
 }
 
 }  // namespace cw::render

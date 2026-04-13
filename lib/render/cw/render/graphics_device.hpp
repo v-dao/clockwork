@@ -48,6 +48,14 @@ class GraphicsDevice {
     (void)row_bytes;
     (void)pixels;
   }
+
+  /// Vulkan 方案1：为 true 时每帧仅用交换链 `RenderPass` 清屏呈现，不要求离屏 GL 与 `upload_swapchain_from_cpu_bgra`。
+  virtual void set_vulkan_native_scene_clear_only(bool enabled) noexcept { (void)enabled; }
+  [[nodiscard]] virtual bool vulkan_native_scene_clear_only() const noexcept { return false; }
+  /// 用仿真时间等调制原生清屏色（仅 `vulkan_native_scene_clear_only()` 为 true 时由 Vulkan 设备使用）。
+  virtual void set_vulkan_native_scene_anim_param(float sim_time_seconds) noexcept {
+    (void)sim_time_seconds;
+  }
 };
 
 /// 按 `GlWindow::window_graphics_api()` 选择实现；Vulkan 初始化失败时返回 `nullptr`（可回退重开窗口为 OpenGL）。

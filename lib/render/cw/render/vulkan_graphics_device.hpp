@@ -30,6 +30,10 @@ class VulkanGraphicsDevice final : public GraphicsDevice {
   void upload_swapchain_from_cpu_bgra(int width, int height, std::size_t row_bytes,
                                       const unsigned char* pixels) noexcept override;
 
+  void set_vulkan_native_scene_clear_only(bool enabled) noexcept override;
+  [[nodiscard]] bool vulkan_native_scene_clear_only() const noexcept override;
+  void set_vulkan_native_scene_anim_param(float sim_time_seconds) noexcept override;
+
  private:
   struct Impl;
   std::unique_ptr<Impl> impl_;

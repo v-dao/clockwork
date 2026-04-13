@@ -33,6 +33,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <memory>
 #include <string>
 #include <vector>
@@ -73,13 +74,29 @@ void adjust_engine_time_scale_by_step(cw::engine::Engine& e, int dir) {
 
 int main(int argc, char** argv) {
 #ifdef _WIN32
-  const bool map_only = argc < 2 || argv[1] == nullptr || argv[1][0] == '\0';
+  bool cli_vulkan_native_clear = false;
+  const char* scen_path_arg = nullptr;
+  for (int ai = 1; ai < argc; ++ai) {
+    if (argv[ai] == nullptr || argv[ai][0] == '\0') {
+      continue;
+    }
+    if (std::strcmp(argv[ai], "--vk-native") == 0) {
+      cli_vulkan_native_clear = true;
+      continue;
+    }
+    if (argv[ai][0] == '-') {
+      continue;
+    }
+    scen_path_arg = argv[ai];
+    break;
+  }
+  const bool map_only = scen_path_arg == nullptr;
 
   cw::scenario::Scenario sc{};
   if (map_only) {
     sc.version = 2;
   } else {
-    const std::string scen_path = cw::situation_view::resolve_asset_path_utf8(argv[1]);
+    const std::string scen_path = cw::situation_view::resolve_asset_path_utf8(scen_path_arg);
     cw::situation_view::set_scenario_directory_for_asset_search_utf8(scen_path);
     check(cw::scenario::parse_scenario_file(scen_path.c_str(), sc), "parse_scenario_file");
   }
@@ -92,7 +109,7 @@ int main(int argc, char** argv) {
 
   const std::string title =
       map_only ? std::string("Clockwork — map")
-               : (std::string("Clockwork — ").append(argv[1] != nullptr ? argv[1] : ""));
+               : (std::string("Clockwork — ").append(scen_path_arg != nullptr ? scen_path_arg : ""));
 
   cw::situation_view::SituationViewShell shell;
   shell.set_viewport_sync_engine(&engine);
@@ -113,6 +130,8 @@ int main(int argc, char** argv) {
   win_cfg.height = 720;
   win_cfg.title_utf8 = title.c_str();
   win_cfg.window_graphics_api = session_api;
+  win_cfg.vulkan_disable_offscreen_gl =
+      cli_vulkan_native_clear && (session_api == cw::render::GraphicsApi::Vulkan);
   if (!win->open(win_cfg)) {
     cw::log(cw::LogLevel::Error, "situation_view: GlWindow::open failed (Windows only in phase 4)");
     return EXIT_FAILURE;
@@ -143,14 +162,23 @@ int main(int argc, char** argv) {
     win->sync_client_size_from_window();
 
     const bool vulkan_present = (gfx->api() == cw::render::GraphicsApi::Vulkan);
+    if (vulkan_present) {
+      gfx->set_vulkan_native_scene_clear_only(cli_vulkan_native_clear);
+      if (cli_vulkan_native_clear) {
+        cw::log(cw::LogLevel::Info,
+                "situation_view: Vulkan native scene (--vk-native): swapchain clear only, no GL map. "
+                "Omit flag to restore GL offscreen + composite.");
+      }
+    }
     cw::render::GlOffscreenWin32* const offscreen = vulkan_present ? win->offscreen_gl() : nullptr;
-    if (vulkan_present && offscreen == nullptr) {
+    if (vulkan_present && offscreen == nullptr && !gfx->vulkan_native_scene_clear_only()) {
       cw::log(cw::LogLevel::Error, "situation_view: Vulkan mode requires offscreen OpenGL (implementation missing)");
       gfx.reset();
       win->close();
       return EXIT_FAILURE;
     }
-    const bool gl_for_scene = !vulkan_present || (offscreen != nullptr);
+    const bool vulkan_native_clear = gfx->vulkan_native_scene_clear_only();
+    const bool gl_for_scene = !vulkan_present || (!vulkan_native_clear && offscreen != nullptr);
 
     GLuint hud_font_base = 0;
     if (gl_for_scene) {
@@ -278,6 +306,10 @@ int main(int argc, char** argv) {
     #endif
 
     std::vector<unsigned char> vulkan_readback;
+    #ifdef _WIN32
+    int vulkan_rb_last_w = 0;
+    int vulkan_rb_last_h = 0;
+    #endif
 
     while (win->is_open() && !win->should_close()) {
       win->poll_events();
@@ -327,16 +359,10 @@ int main(int argc, char** argv) {
       shell.process_wheel(*win, split_left_driven, split_right_driven);
   
       #ifdef _WIN32
-      if (gl_for_scene) {
-        if (vulkan_present) {
-          offscreen->make_current();
-          if (offscreen->ensure_framebuffer(cw, ch)) {
-            offscreen->bind_draw_framebuffer();
-            glViewport(0, 0, cw, ch);
-          }
-        } else {
-          gfx->make_current();
-        }
+      if (gl_for_scene && vulkan_present) {
+        offscreen->make_current();
+      } else if (gl_for_scene) {
+        gfx->make_current();
       }
       if (gl_for_scene && !map_only) {
         const bool left_down = win->left_button_down();
@@ -352,6 +378,18 @@ int main(int argc, char** argv) {
           if (offscreen->ensure_framebuffer(cw, ch)) {
             offscreen->bind_draw_framebuffer();
             glViewport(0, 0, cw, ch);
+            if (offscreen->read_async_capable()) {
+              if (vulkan_rb_last_w > 0 && vulkan_rb_last_h > 0) {
+                vulkan_readback.resize(static_cast<std::size_t>(vulkan_rb_last_w) *
+                                       static_cast<std::size_t>(vulkan_rb_last_h) * 4U);
+                int rw = 0;
+                int rh = 0;
+                if (offscreen->try_resolve_read_pixels_bgra_tight(vulkan_readback.data(), &rw, &rh)) {
+                  gfx->upload_swapchain_from_cpu_bgra(rw, rh, static_cast<std::size_t>(rw) * 4U,
+                                                      vulkan_readback.data());
+                }
+              }
+            }
             shell.pre_draw_split_sync(world, cw, ch, split_left_driven, split_right_driven);
             cw::situation_view::draw_frame(world, shell, cw, ch, win->mouse_client_x(), win->mouse_client_y(),
                                            world_vec.valid() ? &world_vec : nullptr,
@@ -360,9 +398,17 @@ int main(int argc, char** argv) {
                                            boundary_lines.valid() ? &boundary_lines : nullptr, entity_icons,
                                            !map_only, nullptr, hud_font_base, render_opts, fps_ema, frame_ms_wall,
                                            gfx->api());
-            vulkan_readback.resize(static_cast<std::size_t>(cw) * static_cast<std::size_t>(ch) * 4U);
-            offscreen->read_pixels_bgra_tight(cw, ch, vulkan_readback.data());
-            gfx->upload_swapchain_from_cpu_bgra(cw, ch, static_cast<std::size_t>(cw) * 4U, vulkan_readback.data());
+            if (offscreen->read_async_capable()) {
+              offscreen->commit_read_pixels_bgra_async(cw, ch);
+              vulkan_rb_last_w = cw;
+              vulkan_rb_last_h = ch;
+            } else {
+              vulkan_readback.resize(static_cast<std::size_t>(cw) * static_cast<std::size_t>(ch) * 4U);
+              offscreen->read_pixels_bgra_tight(cw, ch, vulkan_readback.data());
+              gfx->upload_swapchain_from_cpu_bgra(cw, ch, static_cast<std::size_t>(cw) * 4U, vulkan_readback.data());
+              vulkan_rb_last_w = 0;
+              vulkan_rb_last_h = 0;
+            }
           }
         } else {
           shell.pre_draw_split_sync(world, cw, ch, split_left_driven, split_right_driven);
@@ -374,6 +420,9 @@ int main(int argc, char** argv) {
                                          !map_only, nullptr, hud_font_base, render_opts, fps_ema, frame_ms_wall,
                                          gfx->api());
         }
+      }
+      if (vulkan_present && gfx->vulkan_native_scene_clear_only()) {
+        gfx->set_vulkan_native_scene_anim_param(static_cast<float>(world.situation.sim_time));
       }
       gfx->end_frame();
       gfx->present();
@@ -439,6 +488,8 @@ int main(int argc, char** argv) {
     const bool switching =
         want_api_switch.exchange(false, std::memory_order_acq_rel) && (pending_api != used_api);
     if (switching) {
+      win->set_vulkan_disable_offscreen_gl(cli_vulkan_native_clear &&
+                                          (pending_api == cw::render::GraphicsApi::Vulkan));
       if (win->try_set_window_graphics_api(pending_api)) {
         session_api = pending_api;
         continue;
