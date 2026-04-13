@@ -1,5 +1,6 @@
 #include "cw/render/globe_view_3d.hpp"
 
+#include "cw/render/globe_pixel_scale.hpp"
 #include "cw/render/lonlat_grid.hpp"
 #include "cw/render/mercator_geo.hpp"
 
@@ -140,7 +141,7 @@ void draw_globe_lonlat_grid(int vp_w, int vp_h, float camera_distance, const dou
   const float ref_d = 3.2F;
   float pixel_scale = static_cast<float>(ref_d / std::max(1.001F, camera_distance));
   pixel_scale *= std::sqrt(static_cast<float>(std::max(360, vp_h)) / 720.F);
-  pixel_scale = std::clamp(pixel_scale, 0.38F, 2.2F);
+  pixel_scale = clamp_globe_label_pixel_scale(pixel_scale);
 
   /// 每条大圆/纬线圆上的分段数须随 `step` 增大，否则放大后折线偏离球面圆弧过明显。
   constexpr int kGlobeGridMaxSeg = 4096;

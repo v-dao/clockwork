@@ -113,24 +113,16 @@ struct SituationViewCli {
 }
 
 void load_optional_coastlines(cw::render::WorldVectorLines& coastlines) {
-  const char* const kCoastCandidates[] = {
-      "assets/maps/world_coastlines.mercl",
-      "../assets/maps/world_coastlines.mercl",
-      "../../assets/maps/world_coastlines.mercl",
-      "assets/maps/10m_physical/world_coastlines.mercl",
-      "../assets/maps/10m_physical/world_coastlines.mercl",
-      "../../assets/maps/10m_physical/world_coastlines.mercl",
-  };
-  const char* coast_loaded_from = nullptr;
-  for (const char* rel : kCoastCandidates) {
-    const std::string p = cw::situation_view::resolve_asset_path_utf8(rel);
-    if (coastlines.load_from_file(p.c_str())) {
-      coast_loaded_from = p.c_str();
-      break;
-    }
-  }
-  if (coast_loaded_from != nullptr) {
-    cw::log(cw::LogLevel::Info, std::string("situation_view: loaded coastline lines ").append(coast_loaded_from));
+  const auto loaded = cw::situation_view::try_resolved_asset_candidates(
+      {"assets/maps/world_coastlines.mercl",
+       "../assets/maps/world_coastlines.mercl",
+       "../../assets/maps/world_coastlines.mercl",
+       "assets/maps/10m_physical/world_coastlines.mercl",
+       "../assets/maps/10m_physical/world_coastlines.mercl",
+       "../../assets/maps/10m_physical/world_coastlines.mercl"},
+      [&](const std::string& p) { return coastlines.load_from_file(p.c_str()); });
+  if (loaded) {
+    cw::log(cw::LogLevel::Info, std::string("situation_view: loaded coastline lines ").append(*loaded));
   } else {
     cw::log(cw::LogLevel::Info,
             "situation_view: coastlines missing (run: python scripts/build_boundary_lines_mercl.py "
@@ -139,25 +131,16 @@ void load_optional_coastlines(cw::render::WorldVectorLines& coastlines) {
 }
 
 void load_optional_boundary_lines(cw::render::WorldVectorLines& boundary_lines) {
-  const char* const kBoundaryCandidates[] = {
-      "assets/maps/world_boundary_lines.mercl",
-      "../assets/maps/world_boundary_lines.mercl",
-      "../../assets/maps/world_boundary_lines.mercl",
-      "assets/maps/10m_physical/world_boundary_lines.mercl",
-      "../assets/maps/10m_physical/world_boundary_lines.mercl",
-      "../../assets/maps/10m_physical/world_boundary_lines.mercl",
-  };
-  const char* boundary_loaded_from = nullptr;
-  for (const char* rel : kBoundaryCandidates) {
-    const std::string p = cw::situation_view::resolve_asset_path_utf8(rel);
-    if (boundary_lines.load_from_file(p.c_str())) {
-      boundary_loaded_from = p.c_str();
-      break;
-    }
-  }
-  if (boundary_loaded_from != nullptr) {
-    cw::log(cw::LogLevel::Info,
-            std::string("situation_view: loaded boundary lines ").append(boundary_loaded_from));
+  const auto loaded = cw::situation_view::try_resolved_asset_candidates(
+      {"assets/maps/world_boundary_lines.mercl",
+       "../assets/maps/world_boundary_lines.mercl",
+       "../../assets/maps/world_boundary_lines.mercl",
+       "assets/maps/10m_physical/world_boundary_lines.mercl",
+       "../assets/maps/10m_physical/world_boundary_lines.mercl",
+       "../../assets/maps/10m_physical/world_boundary_lines.mercl"},
+      [&](const std::string& p) { return boundary_lines.load_from_file(p.c_str()); });
+  if (loaded) {
+    cw::log(cw::LogLevel::Info, std::string("situation_view: loaded boundary lines ").append(*loaded));
   } else {
     cw::log(cw::LogLevel::Info,
             "situation_view: boundary lines missing (run: python "

@@ -1,5 +1,6 @@
 #include "cw/render/lonlat_grid.hpp"
 
+#include "cw/render/globe_pixel_scale.hpp"
 #include "cw/render/mercator_geo.hpp"
 #include "cw/render/tactical_map_2d.hpp"
 
@@ -245,7 +246,7 @@ void draw_tactical_lonlat_grid(int vp_w, int vp_h, const MercatorOrthoFrustum& t
   const float ref_d = 3.2F;
   float pixel_scale = static_cast<float>(ref_d / std::max(1.001F, equiv_d));
   pixel_scale *= std::sqrt(static_cast<float>(std::max(360, vp_h)) / 720.F);
-  pixel_scale = std::clamp(pixel_scale, 0.38F, 2.2F);
+  pixel_scale = clamp_globe_label_pixel_scale(pixel_scale);
 
   constexpr double kEarthR = 6378137.0;
   const int n_mer = static_cast<int>(std::lround(360.0 / step));

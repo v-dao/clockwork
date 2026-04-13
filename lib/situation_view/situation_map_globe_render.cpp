@@ -15,6 +15,7 @@
 #include "cw/engine/types.hpp"
 #include "cw/scenario/scenario.hpp"
 #include "cw/render/globe_program.hpp"
+#include "cw/render/globe_pixel_scale.hpp"
 #include "cw/render/globe_view_3d.hpp"
 #include "cw/render/lonlat_grid.hpp"
 #include "cw/render/mercator_geo.hpp"
@@ -497,7 +498,7 @@ void draw_routes_globe(const cw::engine::SituationPresentation& world, float cx_
   const float ref_d = 3.2F;
   float pixel_scale = ref_d / std::max(1.001F, camera_distance);
   pixel_scale *= std::sqrt(static_cast<float>(std::max(360, vp_h)) / 720.F);
-  pixel_scale = std::clamp(pixel_scale, 0.38F, 2.2F);
+  pixel_scale = cw::render::clamp_globe_label_pixel_scale(pixel_scale);
 
   for (const auto& r : world.routes) {
     if (r.waypoints.size() < 2) {

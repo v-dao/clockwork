@@ -7,7 +7,6 @@
 #include <cctype>
 #include <cstring>
 #include <unordered_set>
-#include <vector>
 
 namespace cw::situation_view {
 
@@ -52,25 +51,14 @@ cw::render::Texture2DRgb* IconTextureCache::get_or_load(const std::string& icon_
   cw::render::Texture2DRgb tex{};
   bool ok = false;
   if (!icon_2d_path.empty()) {
-    std::vector<std::string> cands;
-    append_relative_asset_candidates(icon_2d_path, cands);
-    for (const auto& p : cands) {
-      if (try_load_icon_texture(p, tex)) {
-        ok = true;
-        break;
-      }
-    }
+    ok = try_append_asset_candidates(icon_2d_path, [&](const std::string& p) {
+      return try_load_icon_texture(p, tex);
+    });
   }
   if (!ok) {
-    static const char* kDefaultSvg = "assets/icons/AirPlane.svg";
-    std::vector<std::string> cands;
-    append_relative_asset_candidates(kDefaultSvg, cands);
-    for (const auto& p : cands) {
-      if (try_load_icon_texture(p, tex)) {
-        ok = true;
-        break;
-      }
-    }
+    ok = try_append_asset_candidates("assets/icons/AirPlane.svg", [&](const std::string& p) {
+      return try_load_icon_texture(p, tex);
+    });
   }
   if (!tex.valid()) {
     static std::unordered_set<std::string> icon_fail_logged;

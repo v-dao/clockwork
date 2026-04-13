@@ -10,6 +10,7 @@
 
 #include "cw/render/world_vector_merc.hpp"
 
+#include "cw/render/binary_stream_read.hpp"
 #include "cw/render/mercator_geo.hpp"
 #include "cw/log.hpp"
 
@@ -71,11 +72,6 @@ struct MercPolygon {
   std::vector<std::vector<std::pair<float, float>>> rings;
 };
 
-bool read_u32(std::ifstream& in, std::uint32_t& out) {
-  in.read(reinterpret_cast<char*>(&out), 4);
-  return in.gcount() == 4;
-}
-
 [[nodiscard]] bool parse_merc2(std::ifstream& in, std::vector<MercPolygon>& out_polys) {
   char magic[4]{};
   in.read(magic, 4);
@@ -84,12 +80,12 @@ bool read_u32(std::ifstream& in, std::uint32_t& out) {
   }
 
   std::uint32_t ver = 0;
-  if (!read_u32(in, ver) || ver != 2U) {
+  if (!read_u32_le(in, ver) || ver != 2U) {
     return false;
   }
 
   std::uint32_t num_polygons = 0;
-  if (!read_u32(in, num_polygons) || num_polygons == 0U || num_polygons > 500000U) {
+  if (!read_u32_le(in, num_polygons) || num_polygons == 0U || num_polygons > 500000U) {
     return false;
   }
 
@@ -97,7 +93,7 @@ bool read_u32(std::ifstream& in, std::uint32_t& out) {
 
   for (std::uint32_t pi = 0; pi < num_polygons; ++pi) {
     std::uint32_t num_rings = 0;
-    if (!read_u32(in, num_rings) || num_rings == 0U || num_rings > 100000U) {
+    if (!read_u32_le(in, num_rings) || num_rings == 0U || num_rings > 100000U) {
       return false;
     }
 
@@ -105,7 +101,7 @@ bool read_u32(std::ifstream& in, std::uint32_t& out) {
 
     for (std::uint32_t ri = 0; ri < num_rings; ++ri) {
       std::uint32_t n = 0;
-      if (!read_u32(in, n) || n < 3U || n > 10000000U) {
+      if (!read_u32_le(in, n) || n < 3U || n > 10000000U) {
         return false;
       }
 

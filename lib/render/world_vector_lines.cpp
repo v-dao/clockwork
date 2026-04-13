@@ -10,6 +10,7 @@
 
 #include "cw/render/world_vector_lines.hpp"
 
+#include "cw/render/binary_stream_read.hpp"
 #include "cw/render/mercator_geo.hpp"
 #include "cw/log.hpp"
 
@@ -18,14 +19,6 @@
 #include <string>
 
 namespace cw::render {
-namespace {
-
-bool read_u32(std::ifstream& in, std::uint32_t& out) {
-  in.read(reinterpret_cast<char*>(&out), 4);
-  return in.gcount() == 4;
-}
-
-}  // namespace
 
 bool WorldVectorLines::load_from_file(const char* path_utf8) noexcept {
   destroy();
@@ -42,12 +35,12 @@ bool WorldVectorLines::load_from_file(const char* path_utf8) noexcept {
   }
 
   std::uint32_t ver = 0;
-  if (!read_u32(in, ver) || ver != 1U) {
+  if (!read_u32_le(in, ver) || ver != 1U) {
     return false;
   }
 
   std::uint32_t num_strips = 0;
-  if (!read_u32(in, num_strips) || num_strips == 0U || num_strips > 2'000'000U) {
+  if (!read_u32_le(in, num_strips) || num_strips == 0U || num_strips > 2'000'000U) {
     return false;
   }
 
@@ -63,7 +56,7 @@ bool WorldVectorLines::load_from_file(const char* path_utf8) noexcept {
 
   for (std::uint32_t si = 0; si < num_strips; ++si) {
     std::uint32_t n = 0;
-    if (!read_u32(in, n) || n < 2U || n > 5'000'000U) {
+    if (!read_u32_le(in, n) || n < 2U || n > 5'000'000U) {
       glEndList();
       glDeleteLists(line_display_list, 1);
       line_display_list = 0;
