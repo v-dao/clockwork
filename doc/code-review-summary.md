@@ -47,14 +47,13 @@
 - `parse.cpp` 仍为手写分词；**`scenarios/corpus/`** 与 **`engine_tests`** 持续扩展。解析阶段已拦截**重复** `route`/空域/`comm_node` id、**无效** `comm_node entity`、**`comm_link` 须在 `comm_node` 之后**且端点须已声明、**loss ∈ [0,1]** 与 **`delay_ms`/`bw`/`lat_ms` ≥ 0**、**非法 `entity_script` kind** 等（多带行号）。收尾 **`validate`** 仍处理缺 `version`、多边形顶点过少等（常 **`line == 0`**）。
 - **后续**：更细的错误分类（枚举/子码）、转义与续行若纳入语法再补行号策略与语料。
 
-### 9. 文档与产品表述对齐
+### 9. 文档与产品表述对齐（已落实）
 
-- 根目录 [README.md](../README.md) 仍描述 Lua/蓝图等完整愿景，而 [development-plan.md](development-plan.md) 已说明 Lua 暂缓；易产生预期与代码不一致。
-- **建议**：在 README 中增加简短「当前实现范围 / 路线图」，与实现和子文档对齐。
+- 根目录 [README.md](../README.md) 已增加 **「当前实现范围与路线图」**表：**Lua 暂缓**、**可视化蓝图不暂缓**（按 [development-plan.md](development-plan.md) 阶段 7 推进），并说明下文平台组成仍为**完整产品愿景**。
 
-### 10. 性能与规模（MVP 可接受，需有扩展意识）
+### 10. 性能与规模（已部分落实）
 
-- 传感器双重循环为 O(n²)，实体规模很大时可能成为瓶颈；当前 MVP 可接受，但架构上可预留空间索引或分桶等扩展点。
+- 传感器探测在实体数 ≥ 约 **192** 时采用 **x–y 均匀网格粗筛**（格宽取本步全局最大 `range_m` 与上下限夹紧），复杂度近似 **O(n + 传感器数×局部候选)**；更少实体仍用原枚举。详见 [architecture.md](architecture.md) 模型调度一节与 `lib/engine/engine.cpp` 中 `compute_sensor_detections`。
 
 ---
 

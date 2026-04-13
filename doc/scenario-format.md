@@ -90,6 +90,8 @@ entity_att <name> <yaw_deg> <pitch_deg> <roll_deg>
 | `lua`、`lua_script` | Lua 资源 | 可选 `entry <sym>`（入口符号；缺省为空） |
 | `blueprint`、`bp` | 蓝图 JSON 等资源 | 无 |
 
+**与引擎**：`lua` 路径当前**暂缓执行**（见 [development-plan.md](development-plan.md)）；`blueprint`/`bp` **不随 Lua 一并暂缓**，按阶段 7 实装运行时后由引擎消费。
+
 示例：
 
 ```
